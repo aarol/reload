@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <title>Document</title>
+  <link rel="stylesheet" href="/static/index.css">
+</head>
+
+<body>
+  {{/*  Try running the server and editing this file  */}}
+
+  <h1>Hello World</h1>
+  <p>Lorem ipsum dolor sit amet consectetur adipisicing elit. Tempora molestiae non deleniti odio vel eveniet facilis adipisci. Quas mollitia dolore ipsa rerum! Architecto nostrum mollitia sint repudiandae facilis? Quo, quae?</p>
+  <p>Rendered at {{ .Timestamp }}</p>
+
+  {{ with .LiveReload }}
+    {{ . }}
+  {{ end }}
+</body>
+
+</html>

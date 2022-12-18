@@ -1,0 +1,8 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui;
+}
+body {
+  max-width: 768px;
+  margin-inline: auto;
+}
