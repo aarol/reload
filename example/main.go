@@ -19,7 +19,8 @@ func main() {
 		OnReload: func() {
 			templateCache = newTemplateCache()
 		},
-		Disabled: os.Getenv("MODE") == "PRODUCTION",
+		EndpointPath: "/reload",
+		Disabled:     os.Getenv("MODE") == "PRODUCTION",
 	}
 	go reloader.Run()
 
@@ -27,8 +28,8 @@ func main() {
 	http.Handle("/static/", http.FileServer(http.Dir("ui/")))
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		// an anonymous struct containing the data
-		// that should be passed to the template
+		// an anonymous struct containing the data that
+		// should be passed to the template
 		data := struct {
 			LiveReload template.HTML
 			Timestamp  string
@@ -42,7 +43,7 @@ func main() {
 		}
 	})
 
-	http.HandleFunc("/reload", reloader.ServeWS)
+	http.HandleFunc(reloader.EndpointPath, reloader.ServeWS)
 
 	log.Fatal(http.ListenAndServe("localhost:3001", nil))
 }

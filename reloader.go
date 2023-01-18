@@ -1,10 +1,12 @@
 package reload
 
 import (
+	"fmt"
 	"html/template"
 	"io/fs"
 	"log"
 	"net/http"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -15,12 +17,10 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-var (
-	upgrader = &websocket.Upgrader{}
-)
+var upgrader = &websocket.Upgrader{}
 
 type Reloader struct {
-	// If Disabled is true, the whole package will be short-circuited
+	// Disabled should be set to true in production environments.
 	Disabled bool
 	// Directories to watch recursively.
 	// Usually just a []string{"public"}
@@ -29,11 +29,19 @@ type Reloader struct {
 	// If you have a template cache, you should regenerate it
 	// with this function.
 	OnReload func()
-	cond     *sync.Cond
+	// Where the client Websocket should connect to.
+	// This will be used in InjectedScript()
+	//
+	// Recommended value: "/reload"
+	EndpointPath string
+	Logger       *log.Logger
+	cond         *sync.Cond
 }
 
 // Run listens for changes in directories and
 // broadcasts on write.
+//
+// Run initalizes the watcher and should only be called once in a separate goroutine.
 func (r *Reloader) Run() {
 	if r.Disabled {
 		return
@@ -41,35 +49,27 @@ func (r *Reloader) Run() {
 
 	r.cond = sync.NewCond(&sync.Mutex{})
 
+	r.Logger = log.New(os.Stdout, "Reload: ", log.Lmsgprefix|log.Ltime)
+
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		panic(err)
 	}
 
-	notify := make(chan struct{})
-	go reloadDedup(watcher, notify)
-
-	go func() {
-		for {
-			<-notify
-			if r.OnReload != nil {
-				r.OnReload()
-			}
-			r.cond.Broadcast()
-		}
-	}()
+	go r.reloadDedup(watcher)
 
 	for _, path := range r.Paths {
 		directories, err := recursiveWalk(path)
 		if err != nil {
-			log.Panicf("Error walking directories: %s", err)
+			r.Logger.Printf("Error walking directories: %s\n", err)
+			return
 		}
 		for _, dir := range directories {
 			watcher.Add(dir)
 		}
 	}
 
-	log.Println("Watching", strings.Join(r.Paths, ","), "for changes")
+	r.Logger.Println("Watching", strings.Join(r.Paths, ","), "for changes")
 }
 
 func (r *Reloader) Wait() {
@@ -78,39 +78,39 @@ func (r *Reloader) Wait() {
 	r.cond.L.Unlock()
 }
 
-// Uses gorilla/websocket under the hood.
+// The default websocket endpoint.
+// Implementing your own is easy enough if you
+// don't want to use 'gorilla/websocket'
 func (r *Reloader) ServeWS(w http.ResponseWriter, req *http.Request) {
 	if r.Disabled {
-		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte(http.StatusText(http.StatusNotFound)))
+		http.NotFound(w, req)
 		return
 	}
 	conn, err := upgrader.Upgrade(w, req, nil)
 	if err != nil {
-		log.Println(err)
+		r.Logger.Println(err)
 		return
 	}
 
+	// Block here until next reload event
 	r.Wait()
 
 	conn.WriteMessage(websocket.TextMessage, []byte("reload"))
-
 	conn.Close()
 }
 
-func reloadDedup(w *fsnotify.Watcher, notify chan struct{}) {
-
+func (r *Reloader) reloadDedup(w *fsnotify.Watcher) {
 	wait := 100 * time.Millisecond
 
 	lastEdited := ""
 
 	timer := time.AfterFunc(wait, func() {
-		notify <- struct{}{}
-		log.Println("Edit:", lastEdited)
+		r.Logger.Println("Edit", lastEdited)
+		r.cond.Broadcast()
 	})
 	timer.Stop()
 
-	defer close(notify)
+	defer w.Close()
 
 	for {
 		select {
@@ -118,13 +118,15 @@ func reloadDedup(w *fsnotify.Watcher, notify chan struct{}) {
 			if !ok { // Channel was closed (i.e. Watcher.Close() was called).
 				return
 			}
-			log.Println("error watching: ", err)
+			r.Logger.Println("error watching: ", err)
 		case e, ok := <-w.Events:
 			if !ok { // Channel was closed (i.e. Watcher.Close() was called).
 				return
 			}
+			fmt.Println(e)
 			switch {
 			case e.Has(fsnotify.Create):
+				// Watch any created file/directory
 				if err := w.Add(e.Name); err != nil {
 					log.Printf("error watching %s: %s\n", e.Name, err)
 				}
@@ -136,24 +138,38 @@ func reloadDedup(w *fsnotify.Watcher, notify chan struct{}) {
 				timer.Reset(wait)
 
 			case e.Has(fsnotify.Rename):
+				// a renamed file might be outside
+				// of the specified paths
+				directories, _ := recursiveWalk(e.Name)
+				for _, v := range directories {
+					w.Remove(v)
+				}
+				w.Remove(e.Name)
+
+			case e.Has(fsnotify.Remove):
+				directories, _ := recursiveWalk(e.Name)
+				for _, v := range directories {
+					w.Remove(v)
+				}
 				w.Remove(e.Name)
 			}
 		}
 	}
 }
 
-// Returns the Javascript that should be embedded into the site
-// The browser will listen to a websocket connection at "/reload".
+// Returns the Javascript that should be embedded into the site.
+//
+// The browser will listen to a websocket connection at "ws://<address>/reload".
 //
 // Will return an empty string when 'Disabled' is true
 func (r *Reloader) InjectedScript() template.HTML {
 	if r.Disabled {
 		return ""
 	}
-	return `
-		<script>
+	return template.HTML(fmt.Sprintf(
+		`<script>
 		function listen(isRetry) {
-			let ws = new WebSocket("ws://" + location.host + "/reload")
+			let ws = new WebSocket("ws://" + location.host + "%s")
 			if(isRetry) {
 				ws.onopen = () => window.location.reload()
 			}
@@ -167,7 +183,7 @@ func (r *Reloader) InjectedScript() template.HTML {
 			}
 		}
 		listen(false)
-		</script>`
+		</script>`, r.EndpointPath))
 }
 
 func recursiveWalk(path string) ([]string, error) {
