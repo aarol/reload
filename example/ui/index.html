@@ -11,11 +11,9 @@
 
   <h1>Hello World</h1>
   <p>Lorem ipsum dolor sit amet consectetur adipisicing elit. Tempora molestiae non deleniti odio vel eveniet facilis adipisci. Quas mollitia dolore ipsa rerum! Architecto nostrum mollitia sint repudiandae facilis? Quo, quae?</p>
-  <p>Rendered at {{ .Timestamp }}</p>
+  <p>Rendered aa {{ .Timestamp }}</p>
 
-  {{ with .LiveReload }}
-    {{ . }}
-  {{ end }}
+  {{ .LiveReload }}
 </body>
 
 </html>
