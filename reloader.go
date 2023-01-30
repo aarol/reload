@@ -7,7 +7,7 @@
 //
 //	reload.Paths = []string{"ui/"}
 //
-// 2. Expose the WS endpoint
+// 2. Expose the WS endpoint:
 //
 //	http.HandleFunc("/reload", reload.ServeWS)
 //
@@ -18,7 +18,7 @@
 //	}
 //	templateCache.ExecuteTemplate(w, "index.html", data)
 //
-// 4. Insert this into the main template's <body>:
+// 4. Insert the script into the main template's <body>:
 //
 //	{{ .LiveReload }}
 //
