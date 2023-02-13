@@ -34,6 +34,7 @@ package reload
 
 import (
 	"bytes"
+	_ "embed"
 	"fmt"
 	"log"
 	"net/http"
@@ -52,6 +53,9 @@ var (
 	cond          = sync.NewCond(&sync.Mutex{})
 	defaultInject = InjectedScript("/reload")
 )
+
+//go:embed error.html
+var errorHTML string
 
 // WatchDirectories listens for changes in directories and
 // broadcasts on write.
@@ -123,32 +127,14 @@ func Inject(next http.Handler) http.Handler {
 			contentType = http.DetectContentType(body)
 		}
 
-		// TODO: match only the mime type, not charset
 		switch {
 		case strings.HasPrefix(contentType, "text/html"):
-			body = findAndInsertBefore(body, []byte("</body>"), defaultInject)
+			body = findAndInsertAfter(body, []byte("<body>"), defaultInject)
 
-		case strings.HasPrefix(contentType, "text/plain"):
+		case wrap.header >= 400 && strings.HasPrefix(contentType, "text/plain"):
 			buf := &bytes.Buffer{}
-			fmt.Fprintf(buf, `
-	 		<!DOCTYPE html>
-	 		<html lang="en">
-	 		<head>
-	 		<style>
-	 		:root {
-	 			color-scheme: light dark;
-	 			font-family: system-ui;
-	 		}
-	 		</style>
-	 		</head>
-	 		<body>
-	 		%s
-
-	 		<h1>Error</h1>
-	 		Server returned response:
-	 		<pre>
-%s
-	 		`, defaultInject, body)
+			fmt.Fprintf(buf, errorHTML, defaultInject, http.StatusText(wrap.header), body)
+			fmt.Println(errorHTML)
 			body = buf.Bytes()
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		}

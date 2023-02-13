@@ -1,7 +1,6 @@
 package reload
 
 import (
-	"fmt"
 	"io/fs"
 	"log"
 	"path"
@@ -10,7 +9,6 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 )
-
 
 func reloadDedup(w *fsnotify.Watcher) {
 	wait := 100 * time.Millisecond
@@ -37,7 +35,6 @@ func reloadDedup(w *fsnotify.Watcher) {
 			}
 			Logger.Println("error watching: ", err)
 		case e, ok := <-w.Events:
-			fmt.Println(e)
 			if !ok { // Channel was closed (i.e. Watcher.Close() was called).
 				return
 			}
