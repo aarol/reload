@@ -1,73 +1,74 @@
-// Exposes a singleton which can be used to hot-reload
-// Go templates in development.
+// Exposes a singleton which can be used to trigger a reload
+// in the browser when a file changes
+//
+// Reload doesn't require any external tools and is can be
+// integrated into any project that uses the standard net/http interface.
 //
 // Typically, integrating this package looks like this:
 //
-// 1. Add the paths where your html/js/css is contained:
+// 1. Wrap your http.Handler with the reload.Inject() handler.
+// It should be the first handler in the chain.
 //
-//	reload.Paths = []string{"ui/"}
+// 2. Call WatchDirectories() in a separate goroutine.
 //
-// 2. Expose the WS endpoint:
+//	var handler http.Handler = http.DefaultServeMux
 //
-//	http.HandleFunc("/reload", reload.ServeWS)
-//
-// 3. Inject the JS into your template:
-//
-//	data := map[string]any {
-//		LiveReload: reload.InjectedScript("/reload"),
+//	if isDevelopment {
+//		go reload.WatchDirectories("ui/")
+//		handler = reload.Inject(handler)
 //	}
-//	templateCache.ExecuteTemplate(w, "index.html", data)
+//	log.Fatal(http.ListenAndServe("localhost:3001", handler))
 //
-// 4. Insert the script into the main template's <body>:
-//
-//	{{ .LiveReload }}
-//
-// 5. Use the reloader.OnReload callback to re-parse the templates
-// if they are cached
+// 3. (Optional) Use the reloader.OnReload callback to re-parse the templates
+// if they are cached somewhere
 //
 //	reload.OnReload = func() {
 //		templateCache = newTemplateCache()
 //	}
 //
+// If the built-in http.Handler middleware doesn't work for you,
+// you can still use the `ServeWS()`, `InjectScript()` and `Wait()` functions manually.
+//
 // See the full example at https://github.com/aarol/reload/example/main.go
 package reload
 
 import (
+	"bytes"
 	"fmt"
-	"html/template"
-	"io/fs"
 	"log"
 	"net/http"
 	"os"
-	"path"
-	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/gorilla/websocket"
 )
 
 var (
-	Paths    = []string{}
-	OnReload func()
-	Logger   = log.New(os.Stdout, "Reload: ", log.Lmsgprefix|log.Ltime)
-	upgrader = &websocket.Upgrader{}
-	cond     = sync.NewCond(&sync.Mutex{})
+	OnReload      func()
+	Logger        = log.New(os.Stdout, "Reload: ", log.Lmsgprefix|log.Ltime)
+	upgrader      = &websocket.Upgrader{}
+	cond          = sync.NewCond(&sync.Mutex{})
+	defaultInject = InjectedScript("/reload")
 )
 
-// Run listens for changes in directories and
+// WatchDirectories listens for changes in directories and
 // broadcasts on write.
 //
-// Run initalizes the watcher and should only be called once in a separate goroutine.
-func Run() {
+// WatchDirectories initalizes the watcher and should only be called once in separate new goroutine.
+func WatchDirectories(directories ...string) {
+	if len(directories) == 0 {
+		Logger.Println("No directories to watch")
+		return
+	}
+
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		Logger.Printf("error initializing fsnotify watcher: %s\n", err)
 	}
 
-	for _, path := range Paths {
+	for _, path := range directories {
 		directories, err := recursiveWalk(path)
 		if err != nil {
 			Logger.Printf("Error walking directories: %s\n", err)
@@ -78,7 +79,7 @@ func Run() {
 		}
 	}
 
-	Logger.Println("Watching", strings.Join(Paths, ","), "for changes")
+	Logger.Println("Watching", strings.Join(directories, ","), "for changes")
 	reloadDedup(watcher)
 }
 
@@ -105,64 +106,57 @@ func ServeWS(w http.ResponseWriter, req *http.Request) {
 	conn.Close()
 }
 
-func reloadDedup(w *fsnotify.Watcher) {
-	wait := 100 * time.Millisecond
-
-	lastEdited := ""
-
-	timer := time.AfterFunc(wait, func() {
-		Logger.Println("Edit", lastEdited)
-		if OnReload != nil {
-			OnReload()
+func Inject(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/reload" {
+			ServeWS(w, r)
+			return
 		}
-		cond.Broadcast()
+
+		wrap := &wrapper{ResponseWriter: w, buf: &bytes.Buffer{}}
+		next.ServeHTTP(wrap, r)
+
+		body := wrap.buf.Bytes()
+		contentType := w.Header().Get("Content-Type")
+
+		if contentType == "" {
+			contentType = http.DetectContentType(body)
+		}
+
+		// TODO: match only the mime type, not charset
+		switch {
+		case strings.HasPrefix(contentType, "text/html"):
+			body = findAndInsertBefore(body, []byte("</body>"), defaultInject)
+
+		case strings.HasPrefix(contentType, "text/plain"):
+			buf := &bytes.Buffer{}
+			fmt.Fprintf(buf, `
+	 		<!DOCTYPE html>
+	 		<html lang="en">
+	 		<head>
+	 		<style>
+	 		:root {
+	 			color-scheme: light dark;
+	 			font-family: system-ui;
+	 		}
+	 		</style>
+	 		</head>
+	 		<body>
+	 		%s
+
+	 		<h1>Error</h1>
+	 		Server returned response:
+	 		<pre>
+%s
+	 		`, defaultInject, body)
+			body = buf.Bytes()
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		}
+		if wrap.header != 0 {
+			w.WriteHeader(wrap.header)
+		}
+		w.Write([]byte(body))
 	})
-	timer.Stop()
-
-	defer w.Close()
-
-	for {
-		select {
-		case err, ok := <-w.Errors:
-			if !ok { // Channel was closed (i.e. Watcher.Close() was called).
-				return
-			}
-			Logger.Println("error watching: ", err)
-		case e, ok := <-w.Events:
-			if !ok { // Channel was closed (i.e. Watcher.Close() was called).
-				return
-			}
-			switch {
-			case e.Has(fsnotify.Create):
-				// Watch any created file/directory
-				if err := w.Add(e.Name); err != nil {
-					log.Printf("error watching %s: %s\n", e.Name, err)
-				}
-				lastEdited = path.Base(e.Name)
-				timer.Reset(wait)
-
-			case e.Has(fsnotify.Write):
-				lastEdited = path.Base(e.Name)
-				timer.Reset(wait)
-
-			case e.Has(fsnotify.Rename):
-				// a renamed file might be outside
-				// of the specified paths
-				directories, _ := recursiveWalk(e.Name)
-				for _, v := range directories {
-					w.Remove(v)
-				}
-				w.Remove(e.Name)
-
-			case e.Has(fsnotify.Remove):
-				directories, _ := recursiveWalk(e.Name)
-				for _, v := range directories {
-					w.Remove(v)
-				}
-				w.Remove(e.Name)
-			}
-		}
-	}
 }
 
 // Returns the Javascript that should be embedded into the site as template.HTML.
@@ -172,9 +166,9 @@ func reloadDedup(w *fsnotify.Watcher) {
 // Example:
 //
 //	reload.InjectedScript("/reload")
-func InjectedScript(endpoint string) template.HTML {
+func InjectedScript(endpoint string) string {
 	endpoint = strings.TrimLeftFunc(endpoint, func(r rune) bool { return r == '/' })
-	return template.HTML(fmt.Sprintf(
+	return fmt.Sprintf(
 		`<script>
 		function listen(isRetry) {
 			let ws = new WebSocket("ws://" + location.host + "/%s")
@@ -191,20 +185,5 @@ func InjectedScript(endpoint string) template.HTML {
 			}
 		}
 		listen(false)
-		</script>`, endpoint))
-}
-
-func recursiveWalk(path string) ([]string, error) {
-	res := []string{}
-	err := filepath.WalkDir(path, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			res = append(res, path)
-		}
-		return nil
-	})
-
-	return res, err
+		</script>`, endpoint)
 }
