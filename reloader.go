@@ -63,7 +63,7 @@ var errorHTML string
 // WatchDirectories initalizes the watcher and should only be called once in separate new goroutine.
 func WatchDirectories(directories ...string) {
 	if len(directories) == 0 {
-		Logger.Println("No directories to watch")
+		Logger.Println("WatchDirectories was called with no arguments; nothing to watch")
 		return
 	}
 
@@ -134,7 +134,6 @@ func Inject(next http.Handler) http.Handler {
 		case wrap.header >= 400 && strings.HasPrefix(contentType, "text/plain"):
 			buf := &bytes.Buffer{}
 			fmt.Fprintf(buf, errorHTML, defaultInject, http.StatusText(wrap.header), body)
-			fmt.Println(errorHTML)
 			body = buf.Bytes()
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		}

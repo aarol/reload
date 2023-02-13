@@ -35,14 +35,15 @@ func (w *wrapper) WriteHeader(code int) {
 
 func findAndInsertAfter(src, match []byte, value string) []byte {
 	index := bytes.Index(src, match)
-	buf := &bytes.Buffer{}
 	if index == -1 {
-		buf.Write(src)
-	} else {
-		buf.Write(src[:index+len(match)])
-		buf.WriteString(value)
-		buf.Write(src[len(match)+index:])
+		return src
 	}
+
+	buf := &bytes.Buffer{}
+	buf.Write(src[:index+len(match)])
+	buf.WriteString(value)
+	buf.Write(src[len(match)+index:])
+
 	return buf.Bytes()
 }
 
