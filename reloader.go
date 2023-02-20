@@ -166,7 +166,7 @@ func InjectedScript(endpoint string) string {
 				}
 			}
 			ws.onerror = function(ev) {
-				setTimeout(() => listen(true), 2000);
+				setTimeout(() => listen(true), 1000);
 			}
 		}
 		listen(false)

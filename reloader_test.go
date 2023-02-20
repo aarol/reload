@@ -22,12 +22,11 @@ func TestWebsocket(t *testing.T) {
 	url.Scheme = "ws"
 	url.Path = "/reload"
 	conn, res, err := websocket.DefaultDialer.Dial(url.String(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	assert.Nil(t, err)
 
 	assert.Equal(t, res.StatusCode, http.StatusSwitchingProtocols)
 
+	// trigger cond.Wait() in ServeWS()
 	cond.Broadcast()
 	_, msg, err := conn.ReadMessage()
 
@@ -205,14 +204,13 @@ var benchBody = `<!DOCTYPE html>
 </body>`
 
 func Benchmark(b *testing.B) {
+	Logger.SetOutput(io.Discard)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(benchBody))
+	})
+	ts := httptest.NewServer(WatchAndInject()(mux))
 	b.Run("middlware", func(b *testing.B) {
-		Logger.SetOutput(io.Discard)
-		mux := http.NewServeMux()
-		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			w.Write([]byte(benchBody))
-		})
-		ts := httptest.NewServer(WatchAndInject()(mux))
-
 		for i := 0; i < b.N; i++ {
 			res, _ := http.Get(ts.URL)
 			if res.StatusCode != 200 {
@@ -220,20 +218,15 @@ func Benchmark(b *testing.B) {
 			}
 		}
 	})
-
+	ts.Close()
+	ts = httptest.NewServer(mux)
 	b.Run("default", func(b *testing.B) {
-		mux := http.NewServeMux()
-		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			w.Write([]byte(benchBody))
-		})
-		ts := httptest.NewServer(mux)
-
 		for i := 0; i < b.N; i++ {
-			// http.Get(ts.URL)
 			res, _ := http.Get(ts.URL)
 			if res.StatusCode != 200 {
 				b.Error(res.StatusCode)
 			}
 		}
 	})
+	ts.Close()
 }
