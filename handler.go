@@ -39,11 +39,7 @@ func (w *wrapper) Push(target string, opts *http.PushOptions) error {
 }
 
 func (w *wrapper) ReadFrom(r io.Reader) (n int64, err error) {
-	reader, ok := w.ResponseWriter.(io.ReaderFrom)
-	if !ok {
-		Logger.Println("HTTP handler called ReadFrom() but the underlying responseWriter did not support it")
-	}
-	return reader.ReadFrom(r)
+	return w.buf.ReadFrom(r)
 }
 
 func (w *wrapper) WriteHeader(code int) {
