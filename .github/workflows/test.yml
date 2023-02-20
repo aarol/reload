@@ -1,4 +1,4 @@
-name: Test
+name: Tests
 on: [push]
 
 jobs:
@@ -10,5 +10,5 @@ jobs:
         with:
           go-version: '^1.18' # The Go version to download (if necessary) and use.
 
-      - name: Test
+      - name: Run tests
         run: go test -v ./...

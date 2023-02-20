@@ -3,6 +3,7 @@ package reload
 import (
 	"bufio"
 	"bytes"
+	"io"
 	"net"
 	"net/http"
 )
@@ -29,24 +30,58 @@ func (w *wrapper) Flush() {
 	flusher.Flush()
 }
 
+func (w *wrapper) Push(target string, opts *http.PushOptions) error {
+	pusher, ok := w.ResponseWriter.(http.Pusher)
+	if !ok {
+		Logger.Println("HTTP handler called Push() but the underlying responseWriter did not support it")
+	}
+	return pusher.Push(target, opts)
+}
+
+func (w *wrapper) ReadFrom(r io.Reader) (n int64, err error) {
+	reader, ok := w.ResponseWriter.(io.ReaderFrom)
+	if !ok {
+		Logger.Println("HTTP handler called ReadFrom() but the underlying responseWriter did not support it")
+	}
+	return reader.ReadFrom(r)
+}
+
 func (w *wrapper) WriteHeader(code int) {
 	w.header = code
 }
 
-func findAndInsertAfter(src, match []byte, value string) []byte {
-	index := bytes.Index(src, match)
-	if index == -1 {
-		return src
-	}
-
-	buf := &bytes.Buffer{}
-	buf.Write(src[:index+len(match)])
-	buf.WriteString(value)
-	buf.Write(src[len(match)+index:])
-
-	return buf.Bytes()
-}
-
 func (w *wrapper) Write(b []byte) (int, error) {
 	return w.buf.Write(b)
+}
+
+func insertScriptIntoHTML(src, script []byte) []byte {
+	buf := &bytes.Buffer{}
+
+	index := bytes.Index(src, []byte("</body>"))
+	if index != -1 {
+		// insert before closing body tag
+		buf.Write(src[:index])
+		buf.Write(script)
+		buf.Write(src[index:])
+
+		return buf.Bytes()
+	} else {
+		// insert after beginning body tag
+		match := []byte("<body")
+		index = bytes.Index(src, match)
+		if index != -1 {
+			// find end of body tag
+			offset := bytes.IndexRune(src[index:], '>')
+
+			if offset != -1 {
+				buf.Write(src[:index+len(match)+offset])
+				buf.Write(script)
+				buf.Write(src[index+len(match)+offset:])
+
+				return buf.Bytes()
+			}
+		}
+	}
+
+	return src
 }

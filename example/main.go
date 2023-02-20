@@ -41,8 +41,7 @@ func main() {
 	var handler http.Handler = http.DefaultServeMux
 
 	if isDevelopment {
-		go reload.WatchDirectories("ui/")
-		handler = reload.Inject(handler)
+		handler = reload.WatchAndInject("ui/")(handler)
 	}
 
 	log.Fatal(http.ListenAndServe("localhost:3001", handler))

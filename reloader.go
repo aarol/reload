@@ -1,33 +1,29 @@
 // Exposes a singleton which can be used to trigger a reload
-// in the browser when a file changes
+// in the browser whenever a file is changed.
 //
 // Reload doesn't require any external tools and is can be
 // integrated into any project that uses the standard net/http interface.
 //
 // Typically, integrating this package looks like this:
 //
-// 1. Wrap your http.Handler with the reload.Inject() handler.
-// It should be the first handler in the chain.
-//
-// 2. Call WatchDirectories() in a separate goroutine.
+// 1. Insert the WatchAndInject() middleware at the top of the request chain
 //
 //	var handler http.Handler = http.DefaultServeMux
 //
 //	if isDevelopment {
-//		go reload.WatchDirectories("ui/")
-//		handler = reload.Inject(handler)
+//		handler = reload.WatchAndInject("ui/")(handler)
 //	}
-//	log.Fatal(http.ListenAndServe("localhost:3001", handler))
 //
-// 3. (Optional) Use the reloader.OnReload callback to re-parse the templates
-// if they are cached somewhere
+//	http.ListenAndServe("localhost:3001", handler)
+//
+// 2. (Optional) Use the reloader.OnReload callback to re-parse any cached templates
 //
 //	reload.OnReload = func() {
-//		templateCache = newTemplateCache()
+//		app.templateCache = newTemplateCache()
 //	}
 //
 // If the built-in http.Handler middleware doesn't work for you,
-// you can still use the `ServeWS()`, `InjectScript()` and `Wait()` functions manually.
+// you can still use the `ServeWS()`, `InjectScript()`, `Wait()` and WatchDirectories() functions manually.
 //
 // See the full example at https://github.com/aarol/reload/example/main.go
 package reload
@@ -61,9 +57,9 @@ var errorHTML string
 // broadcasts on write.
 //
 // WatchDirectories initalizes the watcher and should only be called once in separate new goroutine.
-func WatchDirectories(directories ...string) {
+func WatchDirectories(directories []string) {
 	if len(directories) == 0 {
-		Logger.Println("WatchDirectories was called with no arguments; nothing to watch")
+		Logger.Println("No directories specified; returning")
 		return
 	}
 
@@ -110,38 +106,43 @@ func ServeWS(w http.ResponseWriter, req *http.Request) {
 	conn.Close()
 }
 
-func Inject(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/reload" {
-			ServeWS(w, r)
-			return
-		}
+func WatchAndInject(directoriesToWatch ...string) func(next http.Handler) http.Handler {
+	go WatchDirectories(directoriesToWatch)
 
-		wrap := &wrapper{ResponseWriter: w, buf: &bytes.Buffer{}}
-		next.ServeHTTP(wrap, r)
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/reload" {
+				ServeWS(w, r)
+				return
+			}
 
-		body := wrap.buf.Bytes()
-		contentType := w.Header().Get("Content-Type")
+			wrap := &wrapper{ResponseWriter: w, buf: &bytes.Buffer{}}
+			next.ServeHTTP(wrap, r)
 
-		if contentType == "" {
-			contentType = http.DetectContentType(body)
-		}
+			body := wrap.buf.Bytes()
+			contentType := w.Header().Get("Content-Type")
 
-		switch {
-		case strings.HasPrefix(contentType, "text/html"):
-			body = findAndInsertAfter(body, []byte("<body>"), defaultInject)
+			if contentType == "" {
+				contentType = http.DetectContentType(body)
+			}
 
-		case wrap.header >= 400 && strings.HasPrefix(contentType, "text/plain"):
-			buf := &bytes.Buffer{}
-			fmt.Fprintf(buf, errorHTML, defaultInject, http.StatusText(wrap.header), body)
-			body = buf.Bytes()
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		}
-		if wrap.header != 0 {
-			w.WriteHeader(wrap.header)
-		}
-		w.Write([]byte(body))
-	})
+			switch {
+			case strings.HasPrefix(contentType, "text/html"):
+				body = insertScriptIntoHTML(body, []byte(defaultInject))
+
+			case wrap.header >= 400 && strings.HasPrefix(contentType, "text/plain"):
+				buf := &bytes.Buffer{}
+				fmt.Fprintf(buf, errorHTML, defaultInject, http.StatusText(wrap.header), body)
+				body = buf.Bytes()
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			}
+			if wrap.header != 0 {
+				w.WriteHeader(wrap.header)
+			}
+
+			w.Write(body)
+		})
+	}
 }
 
 // Returns the Javascript that should be embedded into the site as template.HTML.
@@ -150,18 +151,17 @@ func Inject(next http.Handler) http.Handler {
 //
 // Example:
 //
-//	reload.InjectedScript("/reload")
+//	template.HTML(reload.InjectedScript("/reload"))
 func InjectedScript(endpoint string) string {
-	endpoint = strings.TrimLeftFunc(endpoint, func(r rune) bool { return r == '/' })
 	return fmt.Sprintf(
 		`<script>
 		function listen(isRetry) {
-			let ws = new WebSocket("ws://" + location.host + "/%s")
+			let ws = new WebSocket("ws://" + location.host + "%s")
 			if(isRetry) {
 				ws.onopen = () => window.location.reload()
 			}
-			ws.onmessage = function(ev) {
-				if(ev.data === "reload") {
+			ws.onmessage = function(msg) {
+				if(msg.data === "reload") {
 					window.location.reload()
 				}
 			}
