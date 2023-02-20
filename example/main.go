@@ -26,7 +26,6 @@ func main() {
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// serve index.html with template data
-
 		data := map[string]any{
 			"Timestamp": time.Now().Format(time.RFC850),
 		}
