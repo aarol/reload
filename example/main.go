@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"html/template"
-	"log"
 	"net/http"
 	"time"
 
@@ -37,11 +36,16 @@ func main() {
 	// isDevelopment := os.Getenv("MODE") == "development"
 	isDevelopment := true
 
+	// this can be any http.Handler like mux.Router or chi.Router
 	var handler http.Handler = http.DefaultServeMux
 
 	if isDevelopment {
 		handler = reload.WatchAndInject("ui/")(handler)
 	}
 
-	log.Fatal(http.ListenAndServe("localhost:3001", handler))
+	addr := "localhost:3001"
+
+	fmt.Println("Server running at", addr)
+
+	http.ListenAndServe(addr, handler)
 }

@@ -1,4 +1,4 @@
-// Exposes a singleton which can be used to trigger a reload
+// Package reload exposes a singleton which can be used to trigger a reload
 // in the browser whenever a file is changed.
 //
 // Reload doesn't require any external tools and is can be
@@ -56,7 +56,7 @@ var errorHTML string
 // WatchDirectories listens for changes in directories and
 // broadcasts on write.
 //
-// WatchDirectories initalizes the watcher and should only be called once in separate new goroutine.
+// WatchDirectories initializes the watcher and should only be called once in separate new goroutine.
 func WatchDirectories(directories []string) {
 	if len(directories) == 0 {
 		Logger.Println("No directories specified; returning")
@@ -89,7 +89,7 @@ func Wait() {
 	cond.L.Unlock()
 }
 
-// The default websocket endpoint.
+// ServeWS is the default websocket endpoint.
 // Implementing your own is easy enough if you
 // don't want to use 'gorilla/websocket'
 func ServeWS(w http.ResponseWriter, req *http.Request) {
@@ -132,6 +132,7 @@ func WatchAndInject(directoriesToWatch ...string) func(next http.Handler) http.H
 
 			case wrap.header >= 400 && strings.HasPrefix(contentType, "text/plain"):
 				buf := &bytes.Buffer{}
+				// error.html contains fmt format specifiers
 				fmt.Fprintf(buf, errorHTML, defaultInject, http.StatusText(wrap.header), body)
 				body = buf.Bytes()
 				w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -145,7 +146,7 @@ func WatchAndInject(directoriesToWatch ...string) func(next http.Handler) http.H
 	}
 }
 
-// Returns the Javascript that should be embedded into the site as template.HTML.
+// InjectedScript returns the Javascript that should be embedded into the site as template.HTML.
 //
 // The browser will listen to a websocket connection at "ws://<address>/<endpoint>".
 //

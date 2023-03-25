@@ -52,27 +52,26 @@ func reloadDedup(w *fsnotify.Watcher) {
 				lastEdited = path.Base(e.Name)
 
 			case e.Has(fsnotify.Rename):
-				// a renamed file might be outside
-				// of the specified paths
+				// a renamed file might be outside the specified paths
 				directories, _ := recursiveWalk(e.Name)
 				for _, v := range directories {
-					w.Remove(v)
+					_ = w.Remove(v)
 				}
-				w.Remove(e.Name)
+				_ = w.Remove(e.Name)
 
 			case e.Has(fsnotify.Remove):
 				directories, _ := recursiveWalk(e.Name)
 				for _, v := range directories {
-					w.Remove(v)
+					_ = w.Remove(v)
 				}
-				w.Remove(e.Name)
+				_ = w.Remove(e.Name)
 			}
 		}
 	}
 }
 
 func recursiveWalk(path string) ([]string, error) {
-	res := []string{}
+	var res []string
 	err := filepath.WalkDir(path, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err

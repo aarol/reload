@@ -14,10 +14,15 @@ type wrapper struct {
 	buf    *bytes.Buffer
 }
 
+func (w *wrapper) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
+}
+
 func (w *wrapper) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	hijacker, ok := w.ResponseWriter.(http.Hijacker)
 	if !ok {
 		Logger.Println("HTTP handler called Hijack() but the underlying responseWriter did not support it")
+		return nil, nil, http.ErrNotSupported
 	}
 	return hijacker.Hijack()
 }
@@ -26,6 +31,7 @@ func (w *wrapper) Flush() {
 	flusher, ok := w.ResponseWriter.(http.Flusher)
 	if !ok {
 		Logger.Println("HTTP handler called Flush() but the underlying responseWriter did not support it")
+		return
 	}
 	flusher.Flush()
 }
@@ -34,6 +40,7 @@ func (w *wrapper) Push(target string, opts *http.PushOptions) error {
 	pusher, ok := w.ResponseWriter.(http.Pusher)
 	if !ok {
 		Logger.Println("HTTP handler called Push() but the underlying responseWriter did not support it")
+		return http.ErrNotSupported
 	}
 	return pusher.Push(target, opts)
 }
