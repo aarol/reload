@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -9,15 +10,19 @@ import (
 	"github.com/aarol/reload"
 )
 
-func newTemplateCache() *template.Template {
+var isDevelopment = flag.Bool("dev", false, "Enable hot-reload")
+
+func parseTemplates() *template.Template {
 	return template.Must(template.ParseGlob("ui/*.html"))
 }
 
 func main() {
-	templateCache := newTemplateCache()
+	flag.Parse()
+
+	templateCache := parseTemplates()
 
 	reload.OnReload = func() {
-		templateCache = newTemplateCache()
+		templateCache = parseTemplates()
 	}
 
 	// serve any static files like you normally would
@@ -33,13 +38,11 @@ func main() {
 			fmt.Println(err)
 		}
 	})
-	// isDevelopment := os.Getenv("MODE") == "development"
-	isDevelopment := true
 
 	// this can be any http.Handler like mux.Router or chi.Router
 	var handler http.Handler = http.DefaultServeMux
 
-	if isDevelopment {
+	if *isDevelopment {
 		handler = reload.WatchAndInject("ui/")(handler)
 	}
 
