@@ -116,10 +116,10 @@ func WatchAndInject(directoriesToWatch ...string) func(next http.Handler) http.H
 				return
 			}
 
-			wrap := &wrapper{ResponseWriter: w, buf: &bytes.Buffer{}}
+			wrap := newWrapResponseWriter(w, r.ProtoMajor)
 			next.ServeHTTP(wrap, r)
 
-			body := wrap.buf.Bytes()
+			body := wrap.Body()
 			contentType := w.Header().Get("Content-Type")
 
 			if contentType == "" {
@@ -128,17 +128,19 @@ func WatchAndInject(directoriesToWatch ...string) func(next http.Handler) http.H
 
 			switch {
 			case strings.HasPrefix(contentType, "text/html"):
-				body = insertScriptIntoHTML(body, []byte(defaultInject))
+				// just append the script to the end of the document
+				// this is invalid HTML, but browsers will accept it anyways
+				body = append(body, []byte(defaultInject)...)
 
-			case wrap.header >= 400 && strings.HasPrefix(contentType, "text/plain"):
+			case wrap.Status() >= 400 && strings.HasPrefix(contentType, "text/plain"):
 				buf := &bytes.Buffer{}
 				// error.html contains fmt format specifiers
-				fmt.Fprintf(buf, errorHTML, defaultInject, http.StatusText(wrap.header), body)
+				fmt.Fprintf(buf, errorHTML, defaultInject, http.StatusText(wrap.Status()), body)
 				body = buf.Bytes()
 				w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			}
-			if wrap.header != 0 {
-				w.WriteHeader(wrap.header)
+			if wrap.Status() != 0 {
+				w.WriteHeader(wrap.Status())
 			}
 
 			w.Write(body)
