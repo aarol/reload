@@ -14,7 +14,7 @@ import (
 
 // Can reach websocket handled by middleware
 func TestWebsocket(t *testing.T) {
-	ts := httptest.NewServer(WatchAndInject()(http.NotFoundHandler()))
+	ts := httptest.NewServer(Handle(http.NotFoundHandler()))
 
 	defer ts.Close()
 
@@ -35,83 +35,6 @@ func TestWebsocket(t *testing.T) {
 	assert.Equal(t, string(msg), "reload")
 }
 
-// Middleware only converts errors into html
-func TestContentType(t *testing.T) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/css", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/css; charset=utf-8")
-		w.Write([]byte("body {}"))
-	})
-
-	mux.HandleFunc("/js", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
-		w.Write([]byte("1+2"))
-	})
-
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("<!DOCTYPE html> "))
-	})
-
-	mux.HandleFunc("/error", func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "internal server error", 500)
-	})
-
-	mux.HandleFunc("/notfound", func(w http.ResponseWriter, r *http.Request) {
-		http.NotFound(w, r)
-	})
-
-	mux.HandleFunc("/plain", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("plain text"))
-	})
-
-	ts := httptest.NewServer(WatchAndInject()(mux))
-	defer ts.Close()
-
-	testdata := []struct {
-		path        string
-		contentType string
-		statusCode  int
-	}{
-		{
-			"/css",
-			"text/css; charset=utf-8",
-			200,
-		},
-		{
-			"/js",
-			"text/javascript; charset=utf-8",
-			200,
-		},
-		{
-			"/",
-			"text/html; charset=utf-8",
-			200,
-		},
-		{
-			"/notfound",
-			"text/html; charset=utf-8",
-			404,
-		},
-		{
-			"/error",
-			"text/html; charset=utf-8",
-			500,
-		},
-		{
-			"/plain",
-			"text/plain; charset=utf-8",
-			200,
-		},
-	}
-
-	for _, tt := range testdata {
-		res, err := http.Get(ts.URL + tt.path)
-		assert.NoError(t, err)
-		assert.Equal(t, res.StatusCode, tt.statusCode)
-		assert.Equal(t, res.Header.Get("Content-Type"), tt.contentType)
-	}
-}
-
 func TestInject(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -129,7 +52,7 @@ func TestInject(t *testing.T) {
 		w.Write([]byte(body))
 	})
 
-	ts := httptest.NewServer(WatchAndInject()(mux))
+	ts := httptest.NewServer(Handle(mux))
 	defer ts.Close()
 
 	res, err := http.Get(ts.URL)
@@ -172,7 +95,7 @@ func TestPartialResponse(t *testing.T) {
 		w.Write([]byte(body))
 	})
 
-	ts := httptest.NewServer(WatchAndInject()(mux))
+	ts := httptest.NewServer(Handle(mux))
 	defer ts.Close()
 
 	for _, path := range []string{"/", "/modified"} {
@@ -207,7 +130,7 @@ func Benchmark(b *testing.B) {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(benchBody))
 	})
-	ts := httptest.NewServer(WatchAndInject()(mux))
+	ts := httptest.NewServer(Handle(mux))
 	b.Run("middlware", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			res, _ := http.Get(ts.URL)
