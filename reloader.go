@@ -1,4 +1,4 @@
-// Package reload exposes a singleton which can be used to trigger a reload
+// Package reload exposes the middleware Handle(), which can be used to trigger a reload
 // in the browser whenever a file is changed.
 //
 // Reload doesn't require any external tools and is can be
@@ -6,24 +6,25 @@
 //
 // Typically, integrating this package looks like this:
 //
-// 1. Insert the WatchAndInject() middleware at the top of the request chain
+// 1. Insert the Handle() middleware at the top of the request chain and set the directories that should be watched
 //
 //	var handler http.Handler = http.DefaultServeMux
 //
 //	if isDevelopment {
+//		reload.Directories = []string{"ui/"}
 //		handler = reload.WatchAndInject("ui/")(handler)
 //	}
 //
 //	http.ListenAndServe("localhost:3001", handler)
 //
-// 2. (Optional) Use the reloader.OnReload callback to re-parse any cached templates
+// 2. Use the reloader.OnReload callback to re-parse any cached templates (Optional)
 //
 //	reload.OnReload = func() {
-//		app.templateCache = newTemplateCache()
+//		app.templateCache = parseTemplates()
 //	}
 //
-// If the built-in http.Handler middleware doesn't work for you,
-// you can still use the `ServeWS()`, `InjectScript()`, `Wait()` and WatchDirectories() functions manually.
+// The package also exposes `ServeWS`, `InjectScript`, `Wait` and `WatchDirectories`,
+// which can be used to embed the script in the templates directly.
 //
 // See the full example at https://github.com/aarol/reload/example/main.go
 package reload
@@ -38,62 +39,73 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/fsnotify/fsnotify"
 	"github.com/gorilla/websocket"
 )
 
+const wsCurrentVersion = "1"
+
 var (
-	OnReload      func()
-	Logger        = log.New(os.Stdout, "Reload: ", log.Lmsgprefix|log.Ltime)
-	upgrader      = &websocket.Upgrader{}
-	cond          = sync.NewCond(&sync.Mutex{})
+	// OnReload will be called after a file changes, but before the browser reloads.
+	OnReload func()
+	// A slice of directories that will be recursively watched for changes.
+	// This should always be set before creating the handler:
+	//
+	// if isDevelopment {
+	//		reload.Directories = []string{"ui/"}
+	//		handler = reload.Handle(handler)
+	//}
+	Directories []string
+	Logger      = log.New(os.Stdout, "Reload: ", log.Lmsgprefix|log.Ltime)
+
+	upgrader = &websocket.Upgrader{}
+	cond     = sync.NewCond(&sync.Mutex{})
+
 	defaultInject = InjectedScript("/reload")
 )
 
 //go:embed error.html
 var errorHTML string
 
-// WatchDirectories listens for changes in directories and
-// broadcasts on write.
-//
-// WatchDirectories initializes the watcher and should only be called once in separate new goroutine.
-func WatchDirectories(directories []string) {
-	if len(directories) == 0 {
-		Logger.Println("No directories specified; returning")
-		return
-	}
-
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		Logger.Printf("error initializing fsnotify watcher: %s\n", err)
-	}
-
-	for _, path := range directories {
-		directories, err := recursiveWalk(path)
-		if err != nil {
-			Logger.Printf("Error walking directories: %s\n", err)
+// Handle starts the reload middleware, watching the directories provided by `reload.Directories`
+// This middleware should only be called once, at the top of the middleware chain.
+func Handle(next http.Handler) http.Handler {
+	go WatchDirectories(Directories)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/reload" {
+			ServeWS(w, r)
 			return
 		}
-		for _, dir := range directories {
-			watcher.Add(dir)
+		body := &bytes.Buffer{}
+		wrap := newWrapResponseWriter(w, r.ProtoMajor)
+		// copy body so that we can sniff the content type
+		wrap.Tee(body)
+		next.ServeHTTP(wrap, r)
+
+		contentType := w.Header().Get("Content-Type")
+
+		if contentType == "" {
+			contentType = http.DetectContentType(body.Bytes())
 		}
-	}
 
-	Logger.Println("Watching", strings.Join(directories, ","), "for changes")
-	reloadDedup(watcher)
-}
-
-func Wait() {
-	cond.L.Lock()
-	cond.Wait()
-	cond.L.Unlock()
+		if strings.HasPrefix(contentType, "text/html") {
+			// just append the script to the end of the document
+			// this is invalid HTML, but browsers will accept it anyways
+			// this should be fine for development purposes
+			w.Write([]byte(defaultInject))
+		}
+	})
 }
 
 // ServeWS is the default websocket endpoint.
 // Implementing your own is easy enough if you
 // don't want to use 'gorilla/websocket'
-func ServeWS(w http.ResponseWriter, req *http.Request) {
-	conn, err := upgrader.Upgrade(w, req, nil)
+func ServeWS(w http.ResponseWriter, r *http.Request) {
+	version := r.URL.Query().Get("v")
+	if version != wsCurrentVersion {
+		Logger.Printf("Injected script version is out of date (v%s < v%s)\n", version, wsCurrentVersion)
+	}
+
+	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		Logger.Println(err)
 		return
@@ -106,72 +118,31 @@ func ServeWS(w http.ResponseWriter, req *http.Request) {
 	conn.Close()
 }
 
-func WatchAndInject(directoriesToWatch ...string) func(next http.Handler) http.Handler {
-	go WatchDirectories(directoriesToWatch)
-
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/reload" {
-				ServeWS(w, r)
-				return
-			}
-
-			wrap := newWrapResponseWriter(w, r.ProtoMajor)
-			next.ServeHTTP(wrap, r)
-
-			body := wrap.Body()
-			contentType := w.Header().Get("Content-Type")
-
-			if contentType == "" {
-				contentType = http.DetectContentType(body)
-			}
-
-			switch {
-			case strings.HasPrefix(contentType, "text/html"):
-				// just append the script to the end of the document
-				// this is invalid HTML, but browsers will accept it anyways
-				body = append(body, []byte(defaultInject)...)
-
-			case wrap.Status() >= 400 && strings.HasPrefix(contentType, "text/plain"):
-				buf := &bytes.Buffer{}
-				// error.html contains fmt format specifiers
-				fmt.Fprintf(buf, errorHTML, defaultInject, http.StatusText(wrap.Status()), body)
-				body = buf.Bytes()
-				w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			}
-			if wrap.Status() != 0 {
-				w.WriteHeader(wrap.Status())
-			}
-
-			w.Write(body)
-		})
-	}
+func Wait() {
+	cond.L.Lock()
+	cond.Wait()
+	cond.L.Unlock()
 }
 
-// InjectedScript returns the Javascript that should be embedded into the site as template.HTML.
-//
-// The browser will listen to a websocket connection at "ws://<address>/<endpoint>".
-//
-// Example:
-//
-//	template.HTML(reload.InjectedScript("/reload"))
+// Returns the javascript that will be
 func InjectedScript(endpoint string) string {
-	return fmt.Sprintf(
-		`<script>
-		function listen(isRetry) {
-			let ws = new WebSocket("ws://" + location.host + "%s")
-			if(isRetry) {
-				ws.onopen = () => window.location.reload()
-			}
-			ws.onmessage = function(msg) {
-				if(msg.data === "reload") {
-					window.location.reload()
-				}
-			}
-			ws.onerror = function(ev) {
-				setTimeout(() => listen(true), 1000);
-			}
-		}
-		listen(false)
-		</script>`, endpoint)
+	return fmt.Sprintf(`
+<script>
+	function retry() {
+	  setTimeout(() => listen(true), 1000)
+	}
+	function listen(isRetry) {
+	  let ws = new WebSocket("ws://" + location.host + "%s?v=%s")
+	  if(isRetry) {
+	    ws.onopen = () => window.location.reload()
+	  }
+	  ws.onmessage = function(msg) {
+	    if(msg.data === "reload") {
+	      window.location.reload()
+	    }
+	  }
+	  ws.onclose = retry
+	}
+	listen(false)
+</script>`, endpoint, wsCurrentVersion)
 }

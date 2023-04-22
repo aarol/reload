@@ -1,14 +1,51 @@
 package reload
 
 import (
+	"errors"
+	"fmt"
 	"io/fs"
 	"log"
 	"path"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
 )
+
+// WatchDirectories listens for changes in directories and
+// broadcasts on write.
+func WatchDirectories(directories []string) {
+	if len(directories) == 0 {
+		Logger.Println("no directories provided (reload.Directories is empty)")
+		return
+	}
+
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		Logger.Printf("error initializing fsnotify watcher: %s\n", err)
+	}
+
+	for _, path := range directories {
+		directories, err := recursiveWalk(path)
+		if err != nil {
+			fmt.Printf("%T\n", err)
+			var pathErr *fs.PathError
+			if errors.As(err, &pathErr) {
+				Logger.Printf("directory doesn't exist: %s", pathErr.Path)
+			} else {
+				Logger.Printf("error walking directories: %s\n", err)
+			}
+			return
+		}
+		for _, dir := range directories {
+			watcher.Add(dir)
+		}
+	}
+
+	Logger.Println("watching", strings.Join(directories, ","), "for changes")
+	reloadDedup(watcher)
+}
 
 func reloadDedup(w *fsnotify.Watcher) {
 	wait := 100 * time.Millisecond
@@ -55,16 +92,16 @@ func reloadDedup(w *fsnotify.Watcher) {
 				// a renamed file might be outside the specified paths
 				directories, _ := recursiveWalk(e.Name)
 				for _, v := range directories {
-					_ = w.Remove(v)
+					w.Remove(v)
 				}
-				_ = w.Remove(e.Name)
+				w.Remove(e.Name)
 
 			case e.Has(fsnotify.Remove):
 				directories, _ := recursiveWalk(e.Name)
 				for _, v := range directories {
-					_ = w.Remove(v)
+					w.Remove(v)
 				}
-				_ = w.Remove(e.Name)
+				w.Remove(e.Name)
 			}
 		}
 	}
