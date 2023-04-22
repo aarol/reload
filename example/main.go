@@ -31,7 +31,7 @@ func main() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// serve index.html with template data
 		data := map[string]any{
-			"Timestamp": time.Now().Format(time.RFC850),
+			"Timestamp": time.Now().Format("Monday, 02-Jan-06 15:04:05 MST"),
 		}
 		err := templateCache.ExecuteTemplate(w, "index.html", data)
 		if err != nil {
@@ -43,12 +43,13 @@ func main() {
 	var handler http.Handler = http.DefaultServeMux
 
 	if *isDevelopment {
-		handler = reload.WatchAndInject("ui/")(handler)
+		reload.Directories = []string{"ui/"}
+		handler = reload.Handle(handler)
 	}
 
 	addr := "localhost:3001"
 
 	fmt.Println("Server running at", addr)
 
-	http.ListenAndServe(addr, handler)
+	fmt.Println(http.ListenAndServe(addr, handler))
 }
