@@ -31,23 +31,17 @@ See the full example at <https://github.com/aarol/reload/blob/main/example/main.
 
 ## Features
 
-- Reloads the browser: The WatchAndReload middleware injects a script into any html response sent by your server. The script will establish a Websocket connection to the server, which is then used to trigger a reload when any file under the specified directories is changed.
-
-- Displays a simple html error page on any >= 400 response, which will reload when any file is edited. This ensures that template errors (which sometimes cause a 500 internal server error), will not prevent the site from being reloaded.
+- Reloads the browser: the middleware injects a script into any html response sent by your server. The script will establish a Websocket connection to the server, which is then used to trigger a reload when any file under the specified directories changes.
 
 ## How it works
 
-When added to the top of the middleware chain, it will write the raw response into a buffer. Depending on the body and Content-Type header, it will either
-
-* Inject a small [\<script\>](https://github.com/aarol/reload/blob/2946b46da6a40f437029cf319b73c22ba550a924/reloader.go#L155) inside any HTML response that connects to a Websocket on the same host, also provided by the middleware.
-
-* Convert the response into HTML and show a simple error page (also containing the [\<script\>](https://github.com/aarol/reload/blob/2946b46da6a40f437029cf319b73c22ba550a924/reloader.go#L155)) for any plaintext body with a statuscode >= 400
+When added to the top of the middleware chain, it will inject a small \<script\> at the end of any HTML file sent by your application. This script will open a WebSocket connection to your server, also handled by the middleware.
 
 ## Caveats
 
-* Reload works with anything the server sends to the client (HTML,CSS,JS etc.), but cannot reload the server itself, since it's just a middleware running on the server.
+* Reload works with everything that the server sends to the client (HTML,CSS,JS etc.), but it cannot reload the server itself, since it's just a middleware running on the server.
 
-	One workaround for this is to use another file watcher on top, like [watchexec](https://github.com/watchexec/watchexec):
+	To reload the entire server, you can use another file watcher on top, like [watchexec](https://github.com/watchexec/watchexec):
 
 	```watchexec -r --exts .go -- go run .```
 
