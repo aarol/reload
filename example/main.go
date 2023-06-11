@@ -39,12 +39,14 @@ func main() {
 		}
 	})
 
-	// this can be any http.Handler like mux.Router or chi.Router
+	// this can be any http.Handler like chi.Router or gin.Engine
 	var handler http.Handler = http.DefaultServeMux
 
 	if *isDevelopment {
 		reload.Directories = []string{"ui/"}
 		handler = reload.Handle(handler)
+	} else {
+		fmt.Println("Running in production mode")
 	}
 
 	addr := "localhost:3001"
