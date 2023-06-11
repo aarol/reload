@@ -125,7 +125,7 @@ var benchBody = `<!DOCTYPE html>
 </body>`
 
 func Benchmark(b *testing.B) {
-	Logger.SetOutput(io.Discard)
+	Log.SetOutput(io.Discard)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(benchBody))

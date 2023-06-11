@@ -17,13 +17,13 @@ import (
 // broadcasts on write.
 func WatchDirectories(directories []string) {
 	if len(directories) == 0 {
-		Logger.Println("no directories provided (reload.Directories is empty)")
+		Log.Println("no directories provided (reload.Directories is empty)")
 		return
 	}
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		Logger.Printf("error initializing fsnotify watcher: %s\n", err)
+		Log.Printf("error initializing fsnotify watcher: %s\n", err)
 	}
 
 	for _, path := range directories {
@@ -32,9 +32,9 @@ func WatchDirectories(directories []string) {
 			fmt.Printf("%T\n", err)
 			var pathErr *fs.PathError
 			if errors.As(err, &pathErr) {
-				Logger.Printf("directory doesn't exist: %s", pathErr.Path)
+				Log.Printf("directory doesn't exist: %s", pathErr.Path)
 			} else {
-				Logger.Printf("error walking directories: %s\n", err)
+				Log.Printf("error walking directories: %s\n", err)
 			}
 			return
 		}
@@ -43,7 +43,7 @@ func WatchDirectories(directories []string) {
 		}
 	}
 
-	Logger.Println("watching", strings.Join(directories, ","), "for changes")
+	Log.Println("watching", strings.Join(directories, ","), "for changes")
 	reloadDedup(watcher)
 }
 
@@ -53,7 +53,7 @@ func reloadDedup(w *fsnotify.Watcher) {
 	lastEdited := ""
 
 	timer := time.AfterFunc(wait, func() {
-		Logger.Println("Edit", lastEdited)
+		Log.Println("Edit", lastEdited)
 		if OnReload != nil {
 			OnReload()
 		}
@@ -70,7 +70,7 @@ func reloadDedup(w *fsnotify.Watcher) {
 			if !ok { // Channel was closed (i.e. Watcher.Close() was called).
 				return
 			}
-			Logger.Println("error watching: ", err)
+			Log.Println("error watching: ", err)
 		case e, ok := <-w.Events:
 			if !ok { // Channel was closed (i.e. Watcher.Close() was called).
 				return

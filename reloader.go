@@ -55,16 +55,13 @@ var (
 	//		handler = reload.Handle(handler)
 	//}
 	Directories []string
-	Logger      = log.New(os.Stdout, "Reload: ", log.Lmsgprefix|log.Ltime)
+	Log         = log.New(os.Stdout, "Reload: ", log.Lmsgprefix|log.Ltime)
 
 	upgrader = &websocket.Upgrader{}
 	cond     = sync.NewCond(&sync.Mutex{})
 
 	defaultInject = InjectedScript("/reload")
 )
-
-//go:embed error.html
-var errorHTML string
 
 // Handle starts the reload middleware, watching the directories provided by `reload.Directories`
 // This middleware should only be called once, at the top of the middleware chain.
@@ -102,12 +99,12 @@ func Handle(next http.Handler) http.Handler {
 func ServeWS(w http.ResponseWriter, r *http.Request) {
 	version := r.URL.Query().Get("v")
 	if version != wsCurrentVersion {
-		Logger.Printf("Injected script version is out of date (v%s < v%s)\n", version, wsCurrentVersion)
+		Log.Printf("Injected script version is out of date (v%s < v%s)\n", version, wsCurrentVersion)
 	}
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		Logger.Println(err)
+		Log.Println(err)
 		return
 	}
 
