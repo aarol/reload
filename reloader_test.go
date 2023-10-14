@@ -20,7 +20,7 @@ func TestWebsocket(t *testing.T) {
 
 	url, _ := url.Parse(ts.URL)
 	url.Scheme = "ws"
-	url.Path = "/reload"
+	url.Path = Endpoint
 	conn, res, err := websocket.DefaultDialer.Dial(url.String(), nil)
 	assert.NoError(t, err)
 
@@ -125,13 +125,13 @@ var benchBody = `<!DOCTYPE html>
 </body>`
 
 func Benchmark(b *testing.B) {
-	Log.SetOutput(io.Discard)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(benchBody))
 	})
-	ts := httptest.NewServer(Handle(mux))
-	b.Run("middlware", func(b *testing.B) {
+
+	ts := httptest.NewServer(mux)
+	b.Run("default", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			res, _ := http.Get(ts.URL)
 			if res.StatusCode != 200 {
@@ -140,8 +140,9 @@ func Benchmark(b *testing.B) {
 		}
 	})
 	ts.Close()
-	ts = httptest.NewServer(mux)
-	b.Run("default", func(b *testing.B) {
+	Log.SetOutput(io.Discard)
+	ts = httptest.NewServer(Handle(mux))
+	b.Run("middlware", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			res, _ := http.Get(ts.URL)
 			if res.StatusCode != 200 {
