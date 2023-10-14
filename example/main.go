@@ -10,13 +10,12 @@ import (
 	"github.com/aarol/reload"
 )
 
-var isDevelopment = flag.Bool("dev", false, "Enable hot-reload")
-
 func parseTemplates() *template.Template {
 	return template.Must(template.ParseGlob("ui/*.html"))
 }
 
 func main() {
+	isDevelopment := flag.Bool("dev", true, "Enable hot-reload")
 	flag.Parse()
 
 	templateCache := parseTemplates()
@@ -25,7 +24,7 @@ func main() {
 		templateCache = parseTemplates()
 	}
 
-	// serve any static files like you normally would
+	// serve any static files like normal
 	http.Handle("/static/", http.FileServer(http.Dir("ui/")))
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -51,7 +50,7 @@ func main() {
 
 	addr := "localhost:3001"
 
-	fmt.Println("Server running at", addr)
+	fmt.Printf("Server running at http://%s\n", addr)
 
 	fmt.Println(http.ListenAndServe(addr, handler))
 }
