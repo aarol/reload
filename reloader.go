@@ -12,10 +12,10 @@
 //
 //	if isDevelopment {
 //		reload.Directories = []string{"ui/"}
-//		handler = reload.WatchAndInject("ui/")(handler)
+//		handler = reload.Handle(handler)
 //	}
 //
-//	http.ListenAndServe("localhost:3001", handler)
+//	http.ListenAndServe(addr, handler)
 //
 // 2. (Optional) Use the reload.OnReload callback to re-parse any cached templates
 //
@@ -26,7 +26,7 @@
 // The package also exposes `ServeWS`, `InjectScript`, `Wait` and `WatchDirectories`,
 // which can be used to embed the script in the templates directly.
 //
-// See the full example at https://github.com/aarol/reload/example/main.go
+// See the full example at https://github.com/aarol/reload/blob/main/example/main.go
 package reload
 
 import (
@@ -54,14 +54,16 @@ var (
 	//		handler = reload.Handle(handler)
 	//}
 	Directories []string
-	Endpoint    = "/reload_ws"
-	Log         = log.New(os.Stdout, "Reload: ", log.Lmsgprefix|log.Ltime)
+	// Endpoint defines what path the WebSocket connection is formed over.
+	// It is set to "/reload_ws" by default.
+	Endpoint = "/reload_ws"
+	Log      = log.New(os.Stdout, "Reload: ", log.Lmsgprefix|log.Ltime)
 
 	upgrader = &websocket.Upgrader{}
 
 	// used to reload all websocket connections at once
 	cond = sync.NewCond(&sync.Mutex{})
-	// Stop injecting script on each HTML page.
+	// Stop injecting the script on each HTML response.
 	DisableInject = false
 )
 

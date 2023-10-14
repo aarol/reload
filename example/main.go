@@ -3,16 +3,12 @@ package main
 import (
 	"flag"
 	"fmt"
-	"html/template"
 	"net/http"
+	"text/template"
 	"time"
 
 	"github.com/aarol/reload"
 )
-
-func parseTemplates() *template.Template {
-	return template.Must(template.ParseGlob("ui/*.html"))
-}
 
 func main() {
 	isDevelopment := flag.Bool("dev", true, "Enable hot-reload")
@@ -52,5 +48,9 @@ func main() {
 
 	fmt.Printf("Server running at http://%s\n", addr)
 
-	fmt.Println(http.ListenAndServe(addr, handler))
+	http.ListenAndServe(addr, handler)
+}
+
+func parseTemplates() *template.Template {
+	return template.Must(template.ParseGlob("ui/*.html"))
 }

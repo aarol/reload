@@ -21,7 +21,7 @@ Reload is a Go library, which enables "hot reloading" of web server assets and t
     	handler = reload.Handle(handler)
    }
 
-   http.ListenAndServe("localhost:3001", handler)
+   http.ListenAndServe(addr, handler)
    ```
 
 2. (Optional) Use the `reload.OnReload` callback to re-parse any templates
