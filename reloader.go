@@ -17,7 +17,7 @@
 //
 //	http.ListenAndServe("localhost:3001", handler)
 //
-// 2. Use the reloader.OnReload callback to re-parse any cached templates (Optional)
+// 2. (Optional) Use the reload.OnReload callback to re-parse any cached templates
 //
 //	reload.OnReload = func() {
 //		app.templateCache = parseTemplates()
@@ -31,7 +31,6 @@ package reload
 
 import (
 	"bytes"
-	_ "embed"
 	"fmt"
 	"log"
 	"net/http"
@@ -55,29 +54,48 @@ var (
 	//		handler = reload.Handle(handler)
 	//}
 	Directories []string
+	Endpoint    = "/reload_ws"
 	Log         = log.New(os.Stdout, "Reload: ", log.Lmsgprefix|log.Ltime)
 
 	upgrader = &websocket.Upgrader{}
-	cond     = sync.NewCond(&sync.Mutex{})
 
-	defaultInject = InjectedScript("/reload")
+	// used to reload all websocket connections at once
+	cond = sync.NewCond(&sync.Mutex{})
+	// Stop injecting script on each HTML page.
+	DisableInject = false
 )
 
 // Handle starts the reload middleware, watching the directories provided by `reload.Directories`
 // This middleware should only be called once, at the top of the middleware chain.
 func Handle(next http.Handler) http.Handler {
 	go WatchDirectories(Directories)
+
+	scriptToInject := InjectedScript()
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/reload" {
+		// Endpoint == "/reload_ws" by default
+		if r.URL.Path == Endpoint {
 			ServeWS(w, r)
 			return
 		}
+		// set headers first so that they're sent with the initial response
+		{
+			// disable caching, because http.FileServer will
+			// send Last-Modified headers, prompting the browser to cache it
+			w.Header().Set("Cache-Control", "no-cache")
+		}
+
+		if DisableInject {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		body := &bytes.Buffer{}
 		wrap := newWrapResponseWriter(w, r.ProtoMajor)
 		// copy body so that we can sniff the content type
 		wrap.Tee(body)
-		next.ServeHTTP(wrap, r)
 
+		next.ServeHTTP(wrap, r)
 		contentType := w.Header().Get("Content-Type")
 
 		if contentType == "" {
@@ -87,8 +105,8 @@ func Handle(next http.Handler) http.Handler {
 		if strings.HasPrefix(contentType, "text/html") {
 			// just append the script to the end of the document
 			// this is invalid HTML, but browsers will accept it anyways
-			// this should be fine for development purposes
-			w.Write([]byte(defaultInject))
+			// should be fine for development purposes
+			w.Write([]byte(scriptToInject))
 		}
 	})
 }
@@ -104,7 +122,7 @@ func ServeWS(w http.ResponseWriter, r *http.Request) {
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		Log.Println(err)
+		Log.Printf("ServeWS error: %s\n", err)
 		return
 	}
 
@@ -121,8 +139,8 @@ func Wait() {
 	cond.L.Unlock()
 }
 
-// Returns the javascript that will be
-func InjectedScript(endpoint string) string {
+// Returns the javascript that will be injected on each HTML page.
+func InjectedScript() string {
 	return fmt.Sprintf(`
 <script>
 	function retry() {
@@ -141,5 +159,5 @@ func InjectedScript(endpoint string) string {
 	  ws.onclose = retry
 	}
 	listen(false)
-</script>`, endpoint, wsCurrentVersion)
+</script>`, Endpoint, wsCurrentVersion)
 }
