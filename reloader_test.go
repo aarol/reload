@@ -21,6 +21,10 @@ func TestWebsocket(t *testing.T) {
 	url, _ := url.Parse(ts.URL)
 	url.Scheme = "ws"
 	url.Path = Endpoint
+	q := url.Query()
+	q.Add("v", wsCurrentVersion)
+	url.RawQuery = q.Encode()
+
 	conn, res, err := websocket.DefaultDialer.Dial(url.String(), nil)
 	assert.NoError(t, err)
 
