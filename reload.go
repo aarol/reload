@@ -43,41 +43,51 @@ import (
 
 const wsCurrentVersion = "1"
 
-var (
+type Reloader struct {
 	// OnReload will be called after a file changes, but before the browser reloads.
 	OnReload func()
 	// A slice of directories that will be recursively watched for changes.
-	// This should always be set before creating the handler:
+	// This should always be set before using the handler:
 	//
 	// if isDevelopment {
-	//		reload.Directories = []string{"ui/"}
+	//		reload.directories = []string{"ui/"}
 	//		handler = reload.Handle(handler)
 	//}
-	Directories []string
+	directories []string
 	// Endpoint defines what path the WebSocket connection is formed over.
 	// It is set to "/reload_ws" by default.
-	Endpoint = "/reload_ws"
-	Log      = log.New(os.Stdout, "Reload: ", log.Lmsgprefix|log.Ltime)
+	Endpoint string
 
-	upgrader = &websocket.Upgrader{}
+	Log *log.Logger
+
+	// Used to upgrade connections to Websocket connections
+	Upgrader websocket.Upgrader
 
 	// used to reload all websocket connections at once
-	cond = sync.NewCond(&sync.Mutex{})
-	// Stop injecting the script on each HTML response.
-	DisableInject = false
-)
+	cond sync.Cond
+}
 
-// Handle starts the reload middleware, watching the directories provided by `reload.Directories`
+func New(directories ...string) *Reloader {
+	r := &Reloader{
+		directories: directories,
+		Endpoint:    "/reload_ws",
+		Log:         log.New(os.Stdout, "Reload: ", log.Lmsgprefix|log.Ltime),
+		cond:        *sync.NewCond(&sync.Mutex{}),
+		Upgrader:    websocket.Upgrader{},
+	}
+	go r.WatchDirectories()
+	return r
+}
+
+// Handle starts the reload middleware, watching the specified `Directories`.
 // This middleware should only be called once, at the top of the middleware chain.
-func Handle(next http.Handler) http.Handler {
-	go WatchDirectories(Directories)
-
-	scriptToInject := InjectedScript()
+func (reload *Reloader) Handle(next http.Handler) http.Handler {
+	scriptToInject := InjectedScript(reload.Endpoint)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Endpoint == "/reload_ws" by default
-		if r.URL.Path == Endpoint {
-			ServeWS(w, r)
+		if r.URL.Path == reload.Endpoint {
+			reload.ServeWS(w, r)
 			return
 		}
 		// set headers first so that they're sent with the initial response
@@ -85,11 +95,6 @@ func Handle(next http.Handler) http.Handler {
 			// disable caching, because http.FileServer will
 			// send Last-Modified headers, prompting the browser to cache it
 			w.Header().Set("Cache-Control", "no-cache")
-		}
-
-		if DisableInject {
-			next.ServeHTTP(w, r)
-			return
 		}
 
 		body := &bytes.Buffer{}
@@ -116,33 +121,33 @@ func Handle(next http.Handler) http.Handler {
 // ServeWS is the default websocket endpoint.
 // Implementing your own is easy enough if you
 // don't want to use 'gorilla/websocket'
-func ServeWS(w http.ResponseWriter, r *http.Request) {
+func (reload *Reloader) ServeWS(w http.ResponseWriter, r *http.Request) {
 	version := r.URL.Query().Get("v")
 	if version != wsCurrentVersion {
-		Log.Printf("Injected script version is out of date (v%s < v%s)\n", version, wsCurrentVersion)
+		reload.Log.Printf("Injected script version is out of date (v%s < v%s)\n", version, wsCurrentVersion)
 	}
 
-	conn, err := upgrader.Upgrade(w, r, nil)
+	conn, err := reload.Upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		Log.Printf("ServeWS error: %s\n", err)
+		reload.Log.Printf("ServeWS error: %s\n", err)
 		return
 	}
 
 	// Block here until next reload event
-	Wait()
+	reload.Wait()
 
 	conn.WriteMessage(websocket.TextMessage, []byte("reload"))
 	conn.Close()
 }
 
-func Wait() {
-	cond.L.Lock()
-	cond.Wait()
-	cond.L.Unlock()
+func (reload *Reloader) Wait() {
+	reload.cond.L.Lock()
+	reload.cond.Wait()
+	reload.cond.L.Unlock()
 }
 
 // Returns the javascript that will be injected on each HTML page.
-func InjectedScript() string {
+func InjectedScript(endpoint string) string {
 	return fmt.Sprintf(`
 <script>
 	function retry() {
@@ -161,5 +166,5 @@ func InjectedScript() string {
 	  ws.onclose = retry
 	}
 	listen(false)
-</script>`, Endpoint, wsCurrentVersion)
+</script>`, endpoint, wsCurrentVersion)
 }

@@ -1,10 +1,14 @@
 package reload
 
 import (
+	"bytes"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -12,31 +16,68 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// Can reach websocket handled by middleware
-func TestWebsocket(t *testing.T) {
-	ts := httptest.NewServer(Handle(http.NotFoundHandler()))
+func NewTestingReloader(t *testing.T) *Reloader {
+	t.Helper()
 
+	r := New(t.TempDir())
+
+	r.Log.SetOutput(io.Discard)
+
+	return r
+}
+
+func TestReload(t *testing.T) {
+	indexHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `<!DOCTYPE html>
+		<html lang="en">
+
+		<head>
+			<title>Document</title>
+			<link rel="stylesheet" href="/static/index.css">
+		</head>
+
+		<body>
+			<h1>Hello World!</h1>
+		</body>`)
+	})
+
+	reload := NewTestingReloader(t)
+
+	ts := httptest.NewServer(reload.Handle(indexHandler))
 	defer ts.Close()
 
-	url, _ := url.Parse(ts.URL)
-	url.Scheme = "ws"
-	url.Path = Endpoint
-	q := url.Query()
-	q.Add("v", wsCurrentVersion)
-	url.RawQuery = q.Encode()
+	conn, res := newWebsocketConn(t, ts.URL+reload.Endpoint, wsCurrentVersion)
+	assert.Equal(t, http.StatusSwitchingProtocols, res.StatusCode)
 
-	conn, res, err := websocket.DefaultDialer.Dial(url.String(), nil)
+	res, err := http.Get(ts.URL)
 	assert.NoError(t, err)
+	defer res.Body.Close()
 
-	assert.Equal(t, res.StatusCode, http.StatusSwitchingProtocols)
+	assert.True(t, containsScript(t, reload, res.Body))
 
-	// trigger cond.Wait() in ServeWS()
-	cond.Broadcast()
-	_, msg, err := conn.ReadMessage()
-
+	// create file in watched directory
+	f, err := os.Create(filepath.Join(reload.directories[0], "temp.txt"))
 	assert.NoError(t, err)
+	defer f.Close()
 
-	assert.Equal(t, string(msg), "reload")
+	msgType, data, err := conn.ReadMessage()
+	assert.NoError(t, err)
+	assert.Equal(t, websocket.TextMessage, msgType)
+	assert.Equal(t, "reload", string(data))
+}
+
+func TestWebsocketOldVersion(t *testing.T) {
+	reload := NewTestingReloader(t)
+
+	ts := httptest.NewServer(reload.Handle(http.NotFoundHandler()))
+
+	defer ts.Close()
+	b := bytes.Buffer{}
+	reload.Log.SetOutput(&b)
+	_, res := newWebsocketConn(t, ts.URL+reload.Endpoint, "0")
+	assert.Equal(t, http.StatusSwitchingProtocols, res.StatusCode)
+
+	assert.Contains(t, b.String(), "out of date")
 }
 
 func TestInject(t *testing.T) {
@@ -56,7 +97,9 @@ func TestInject(t *testing.T) {
 		w.Write([]byte(body))
 	})
 
-	ts := httptest.NewServer(Handle(mux))
+	reload := NewTestingReloader(t)
+
+	ts := httptest.NewServer(reload.Handle(mux))
 	defer ts.Close()
 
 	res, err := http.Get(ts.URL)
@@ -64,9 +107,7 @@ func TestInject(t *testing.T) {
 	assert.Equal(t, http.StatusOK, res.StatusCode)
 	defer res.Body.Close()
 
-	body, err := io.ReadAll(res.Body)
-	assert.NoError(t, err)
-	assert.Contains(t, string(body), "script")
+	assert.True(t, containsScript(t, reload, res.Body))
 }
 
 // Partial html response, response with modified body tag
@@ -99,7 +140,9 @@ func TestPartialResponse(t *testing.T) {
 		w.Write([]byte(body))
 	})
 
-	ts := httptest.NewServer(Handle(mux))
+	reload := NewTestingReloader(t)
+
+	ts := httptest.NewServer(reload.Handle(mux))
 	defer ts.Close()
 
 	for _, path := range []string{"/", "/modified"} {
@@ -144,8 +187,12 @@ func Benchmark(b *testing.B) {
 		}
 	})
 	ts.Close()
-	Log.SetOutput(io.Discard)
-	ts = httptest.NewServer(Handle(mux))
+
+	reload := New(b.TempDir())
+
+	reload.Log.SetOutput(io.Discard)
+
+	ts = httptest.NewServer(reload.Handle(mux))
 	b.Run("middlware", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			res, _ := http.Get(ts.URL)
@@ -155,4 +202,25 @@ func Benchmark(b *testing.B) {
 		}
 	})
 	ts.Close()
+}
+
+func containsScript(t *testing.T, reload *Reloader, responseBody io.Reader) bool {
+	body, err := io.ReadAll(responseBody)
+	assert.NoError(t, err)
+	return strings.Contains(string(body), InjectedScript(reload.Endpoint))
+}
+
+func newWebsocketConn(t *testing.T, addr string, wsVersion string) (*websocket.Conn, *http.Response) {
+	t.Helper()
+
+	url, err := url.Parse(addr)
+	assert.NoError(t, err)
+	url.Scheme = "ws"
+	q := url.Query()
+	q.Add("v", wsVersion)
+	url.RawQuery = q.Encode()
+
+	conn, res, err := websocket.DefaultDialer.Dial(url.String(), nil)
+	assert.NoError(t, err)
+	return conn, res
 }

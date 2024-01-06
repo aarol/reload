@@ -9,63 +9,59 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bep/debounce"
 	"github.com/fsnotify/fsnotify"
 )
 
 // WatchDirectories listens for changes in directories and
 // broadcasts on write.
-func WatchDirectories(directories []string) {
-	if len(directories) == 0 {
-		Log.Println("no directories provided (reload.Directories is empty)")
+func (reload *Reloader) WatchDirectories() {
+	if len(reload.directories) == 0 {
+		reload.Log.Println("no directories provided (reload.Directories is empty)")
 		return
 	}
 
-	watcher, err := fsnotify.NewWatcher()
+	w, err := fsnotify.NewWatcher()
 	if err != nil {
-		Log.Printf("error initializing fsnotify watcher: %s\n", err)
+		reload.Log.Printf("error initializing fsnotify watcher: %s\n", err)
 	}
 
-	for _, path := range directories {
+	for _, path := range reload.directories {
 		directories, err := recursiveWalk(path)
 		if err != nil {
 			var pathErr *fs.PathError
 			if errors.As(err, &pathErr) {
-				Log.Printf("directory doesn't exist: %s\n", pathErr.Path)
+				reload.Log.Printf("directory doesn't exist: %s\n", pathErr.Path)
 			} else {
-				Log.Printf("error walking directories: %s\n", err)
+				reload.Log.Printf("error walking directories: %s\n", err)
 			}
 			return
 		}
 		for _, dir := range directories {
-			watcher.Add(dir)
+			w.Add(dir)
 		}
 	}
 
-	Log.Println("watching", strings.Join(directories, ","), "for changes")
-	reloadDedup(watcher)
-}
+	reload.Log.Println("watching", strings.Join(reload.directories, ","), "for changes")
 
-func reloadDedup(w *fsnotify.Watcher) {
-	wait := 100 * time.Millisecond
+	debounce := debounce.New(100 * time.Millisecond)
 
-	lastEdited := ""
-
-	timer := time.AfterFunc(wait, func() {
-		Log.Println("Edit", lastEdited)
-		if OnReload != nil {
-			OnReload()
+	callback := func(path string) func() {
+		return func() {
+			reload.Log.Println("Edit", path)
+			if reload.OnReload != nil {
+				reload.OnReload()
+			}
+			reload.cond.Broadcast()
 		}
-		cond.Broadcast()
-	})
-
-	timer.Stop()
+	}
 
 	defer w.Close()
 
 	for {
 		select {
 		case err := <-w.Errors:
-			Log.Println("error watching: ", err)
+			reload.Log.Println("error watching: ", err)
 		case e := <-w.Events:
 			switch {
 			case e.Has(fsnotify.Create):
@@ -73,12 +69,10 @@ func reloadDedup(w *fsnotify.Watcher) {
 				if err := w.Add(e.Name); err != nil {
 					log.Printf("error watching %s: %s\n", e.Name, err)
 				}
-				timer.Reset(wait)
-				lastEdited = path.Base(e.Name)
+				debounce(callback(path.Base(e.Name)))
 
 			case e.Has(fsnotify.Write):
-				timer.Reset(wait)
-				lastEdited = path.Base(e.Name)
+				debounce(callback(path.Base(e.Name)))
 
 			case e.Has(fsnotify.Rename), e.Has(fsnotify.Remove):
 				// a renamed file might be outside the specified paths
