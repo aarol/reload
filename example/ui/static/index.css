@@ -2,7 +2,14 @@
   color-scheme: light dark;
   font-family: system-ui;
 }
+
 body {
   max-width: 768px;
   margin-inline: auto;
+  padding-inline: 1em;
+}
+
+h1 {
+  text-align: center;
+  border-radius: 20px;
 }

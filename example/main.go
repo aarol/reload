@@ -16,15 +16,11 @@ func main() {
 
 	templateCache := parseTemplates()
 
-	reload.OnReload = func() {
-		templateCache = parseTemplates()
-	}
-
 	// serve any static files like normal
 	http.Handle("/static/", http.FileServer(http.Dir("ui/")))
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		// serve index.html with template data
+		// serve a template file with dynamic data
 		data := map[string]any{
 			"Timestamp": time.Now().Format("Monday, 02-Jan-06 15:04:05 MST"),
 		}
@@ -34,11 +30,17 @@ func main() {
 		}
 	})
 
-	// this can be any http.Handler like chi.Router or gin.Engine
+	// handler can be anything that implements http.Handler,
+	// like chi.Router, echo.Echo or gin.Engine
 	var handler http.Handler = http.DefaultServeMux
 
 	if *isDevelopment {
-		reload.Directories = []string{"ui/"}
+
+		reload := reload.New("ui/")
+		reload.OnReload = func() {
+			templateCache = parseTemplates()
+		}
+
 		handler = reload.Handle(handler)
 	} else {
 		fmt.Println("Running in production mode")
