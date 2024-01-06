@@ -2,7 +2,7 @@
 
 ![Tests](https://github.com/aarol/reload/actions/workflows/test.yml/badge.svg)
 
-Reload is a Go library, which enables "hot reloading" of web server assets and templates, reloading the browser instantly via Websockets. The strength of Reload lies in it's simple API and easy integration to any Go projects.
+Reload is a Go package, which enables "soft reloading" of web server assets and templates, reloading the browser instantly via Websockets. The strength of Reload lies in it's simple API and easy integration to any Go projects.
 
 ## Installation
 
@@ -20,7 +20,7 @@ Reload is a Go library, which enables "hot reloading" of web server assets and t
    if isDevelopment {
       // Call `New()` with a list of directories to recursively watch
       reloader := reload.New("ui/")
-      
+
       // Optionally, define a callback to
       // invalidate any caches
       reloader.OnReload = func() {
@@ -44,16 +44,21 @@ When added to the top of the middleware chain, `(*Reloader).Handle()` will injec
 
 The injected script is at the bottom of [this file](https://github.com/aarol/reload/blob/main/reload.go).
 
-You can also do the injection yourself, as the package also exposes the methods `(*Reloader).ServeWS`, `(*Reloader).Wait` and `(*Reloader).WatchDirectories`, which are all used by the `(*Reloader).Handle` middleware.
+You can also do the injection yourself, as the package also exposes the methods `(*Reloader).ServeWS` and `(*Reloader).WatchDirectories`, which are used by the `(*Reloader).Handle` middleware.
 
-> Currently, injecting the script is done by appending to the end of the document, even after the \</html\> tag. This makes the library code _much_ simpler, but may break older/less forgiving browsers.
+> Currently, injecting the script is done by appending to the end of the document, even after the \</html\> tag.
+> This makes the library code _much_ simpler, but may break older/less forgiving browsers.
 
 ## Caveats
 
-- Reload works with everything that the server sends to the client (HTML,CSS,JS etc.), but it cannot restart the server itself, since it's just a middleware running on the server.
+- Reload works with everything that the server sends to the client (HTML,CSS,JS etc.), but it cannot restart the server itself,
+  since it's just a middleware running on the server.
 
   To reload the entire server, you can use another file watcher on top, like [watchexec](https://github.com/watchexec/watchexec):
 
   `watchexec -r --exts .go -- go run .`
+
+  When the websocket connection to the server is lost, the browser will try to reconnect every second.
+  This means that when the server comes back, the browser will still reload, although not as fast :)
 
 - Reload will not work for embedded assets, since all go:embed files are baked into the executable at build time.

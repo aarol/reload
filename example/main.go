@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	isDevelopment := flag.Bool("dev", true, "Enable hot-reload")
+	isDevelopment := flag.Bool("dev", true, "Development mode")
 	flag.Parse()
 
 	templateCache := parseTemplates()
@@ -35,8 +35,9 @@ func main() {
 	var handler http.Handler = http.DefaultServeMux
 
 	if *isDevelopment {
-
+		// Call `New()` with a list of directories to recursively watch
 		reload := reload.New("ui/")
+
 		reload.OnReload = func() {
 			templateCache = parseTemplates()
 		}

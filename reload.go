@@ -6,23 +6,29 @@
 //
 // Typically, integrating this package looks like this:
 //
-// 1. Insert the Handle() middleware at the top of the request chain and set the directories that should be watched
+// 1. Create a new Reloader and insert the middleware to your handler chain:
 //
+//	// handler can be anything that implements http.Handler,
+//	// like chi.Router, echo.Echo or gin.Engine
 //	var handler http.Handler = http.DefaultServeMux
 //
 //	if isDevelopment {
-//		reload.Directories = []string{"ui/"}
-//		handler = reload.Handle(handler)
+//	   // Call `New()` with a list of directories to recursively watch
+//	   reloader := reload.New("ui/")
+//
+//	   // Optionally, define a callback to
+//	   // invalidate any caches
+//	   reloader.OnReload = func() {
+//	      app.parseTemplates()
+//	   }
+//
+//	   // Use the Handle() method as a middleware
+//	   handler = reloader.Handle(handler)
 //	}
 //
 //	http.ListenAndServe(addr, handler)
 //
-// 2. (Optional) Use the reload.OnReload callback to re-parse any cached templates
-//
-//	reload.OnReload = func() {
-//		app.templateCache = parseTemplates()
-//	}
-//
+// 2. Run your application, make changes to files in the specified directories, and see the updated page instantly!
 // The package also exposes `ServeWS`, `InjectScript`, `Wait` and `WatchDirectories`,
 // which can be used to embed the script in the templates directly.
 //
@@ -46,13 +52,7 @@ const wsCurrentVersion = "1"
 type Reloader struct {
 	// OnReload will be called after a file changes, but before the browser reloads.
 	OnReload func()
-	// A slice of directories that will be recursively watched for changes.
-	// This should always be set before using the handler:
-	//
-	// if isDevelopment {
-	//		reload.directories = []string{"ui/"}
-	//		handler = reload.Handle(handler)
-	//}
+	// directories to recursively watch
 	directories []string
 	// Endpoint defines what path the WebSocket connection is formed over.
 	// It is set to "/reload_ws" by default.
@@ -63,25 +63,29 @@ type Reloader struct {
 	// Used to upgrade connections to Websocket connections
 	Upgrader websocket.Upgrader
 
-	// used to reload all websocket connections at once
-	cond sync.Cond
+	// used to trigger all websocket connections at once
+	cond           sync.Cond
+	startedWatcher bool
 }
 
+// New returns a new Reloader with the provided directories.
 func New(directories ...string) *Reloader {
-	r := &Reloader{
+	return &Reloader{
 		directories: directories,
 		Endpoint:    "/reload_ws",
 		Log:         log.New(os.Stdout, "Reload: ", log.Lmsgprefix|log.Ltime),
 		cond:        *sync.NewCond(&sync.Mutex{}),
 		Upgrader:    websocket.Upgrader{},
 	}
-	go r.WatchDirectories()
-	return r
 }
 
-// Handle starts the reload middleware, watching the specified `Directories`.
-// This middleware should only be called once, at the top of the middleware chain.
+// Handle starts the reload middleware, watching the specified directories and injecting the script into HTML responses.
 func (reload *Reloader) Handle(next http.Handler) http.Handler {
+	// Only init the watcher once
+	if !reload.startedWatcher {
+		go reload.WatchDirectories()
+		reload.startedWatcher = true
+	}
 	scriptToInject := InjectedScript(reload.Endpoint)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -91,11 +95,10 @@ func (reload *Reloader) Handle(next http.Handler) http.Handler {
 			return
 		}
 		// set headers first so that they're sent with the initial response
-		{
-			// disable caching, because http.FileServer will
-			// send Last-Modified headers, prompting the browser to cache it
-			w.Header().Set("Cache-Control", "no-cache")
-		}
+
+		// disable caching, because http.FileServer will
+		// send Last-Modified headers, prompting the browser to cache it
+		w.Header().Set("Cache-Control", "no-cache")
 
 		body := &bytes.Buffer{}
 		wrap := newWrapResponseWriter(w, r.ProtoMajor)

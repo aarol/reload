@@ -26,6 +26,8 @@ func (reload *Reloader) WatchDirectories() {
 		reload.Log.Printf("error initializing fsnotify watcher: %s\n", err)
 	}
 
+	defer w.Close()
+
 	for _, path := range reload.directories {
 		directories, err := recursiveWalk(path)
 		if err != nil {
@@ -55,8 +57,6 @@ func (reload *Reloader) WatchDirectories() {
 			reload.cond.Broadcast()
 		}
 	}
-
-	defer w.Close()
 
 	for {
 		select {
