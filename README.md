@@ -10,41 +10,43 @@ Reload is a Go library, which enables "hot reloading" of web server assets and t
 
 ## Usage
 
-1. Insert the Handle() middleware at the top of the request chain and set the directories that should be watched
+1. Create a new Reloader and insert the middleware to your handler chain:
 
    ```go
+   // handler can be anything that implements http.Handler,
+   // like chi.Router, echo.Echo or gin.Engine
    var handler http.Handler = http.DefaultServeMux
-   // or chi.Router or gin.Engine or echo.Echo
 
    if isDevelopment {
-    	reload.Directories = []string{"ui/"}
-    	handler = reload.Handle(handler)
+      // Call `New()` with a list of directories to recursively watch
+      reloader := reload.New("ui/")
+      
+      // Optionally, define a callback to
+      // invalidate any caches
+      reloader.OnReload = func() {
+         app.parseTemplates()
+      }
+
+      // Use the Handle() method as a middleware
+      handler = reloader.Handle(handler)
    }
 
    http.ListenAndServe(addr, handler)
    ```
 
-2. (Optional) Use the `reload.OnReload` callback to re-parse any templates
-
-   ```go
-   reload.OnReload = func() {
-   	app.parseTemplates()
-   }
-   ```
-
-3. Run your application, make changes to files in the specified directory, and see the updated page instantly!
+2. Run your application, make changes to files in the specified directories, and see the updated page instantly!
 
 See the full example at <https://github.com/aarol/reload/blob/main/example/main.go>
 
 ## How it works
 
-When added to the top of the middleware chain, `reload.Handle()` will inject a small \<script\> at the end of any HTML file sent by your application. This script will instruct the browser to open a WebSocket connection back to your server, which will be also handled by the middleware.
+When added to the top of the middleware chain, `(*Reloader).Handle()` will inject a small `<script/>` at the end of any HTML file sent by your application. This script will instruct the browser to open a WebSocket connection back to your server, which will be also handled by the middleware.
 
-The injected script is at the bottom of [this file](https://github.com/aarol/reload/blob/main/reloader.go). If you want to do the injection yourself, you can just copy the script from the source and set `reload.DisableInject` to `true`.
+The injected script is at the bottom of [this file](https://github.com/aarol/reload/blob/main/reload.go).
 
-The package also exposes `ServeWS`, `InjectScript`, `Wait` and `WatchDirectories`, which can be used instead of the `Handle` middleware.
+You can also do the injection yourself, as the package also exposes the methods `(*Reloader).ServeWS`, `(*Reloader).Wait` and `(*Reloader).WatchDirectories`, which are all used by the `(*Reloader).Handle` middleware.
 
-> Currently, injecting the script is done by appending to the end of the document, even after the \</html\> tag. This makes the library code *much* simpler, but may break older/less forgiving browsers.
+> Currently, injecting the script is done by appending to the end of the document, even after the \</html\> tag. This makes the library code _much_ simpler, but may break older/less forgiving browsers.
 
 ## Caveats
 
