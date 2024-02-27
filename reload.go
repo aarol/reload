@@ -47,6 +47,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// incremented each time a breaking change is made
 const wsCurrentVersion = "1"
 
 type Reloader struct {
@@ -57,25 +58,35 @@ type Reloader struct {
 	// Endpoint defines what path the WebSocket connection is formed over.
 	// It is set to "/reload_ws" by default.
 	Endpoint string
+	// When set to true, prevents the middleware from sending a "Cache-Control=no-cache" header on each request.
+	//
+	// Some handlers, like http.FileServer send Last-Modified headers, which prevent the browser from refetching changed files correctly.
+	//
+	// To prevent confusion, caching is disabled by default.
+	// It is also possible to enable this option, and use a middleware like Chi's NoCache (https://github.com/go-chi/chi/blob/master/middleware/nocache.go)
+	AllowCaching bool
 
 	Log *log.Logger
 
 	// Used to upgrade connections to Websocket connections
 	Upgrader websocket.Upgrader
 
-	// used to trigger all websocket connections at once
-	cond           sync.Cond
+	// Used to trigger a reload on all websocket connections at once
+	cond           *sync.Cond
 	startedWatcher bool
 }
 
 // New returns a new Reloader with the provided directories.
 func New(directories ...string) *Reloader {
 	return &Reloader{
-		directories: directories,
-		Endpoint:    "/reload_ws",
-		Log:         log.New(os.Stdout, "Reload: ", log.Lmsgprefix|log.Ltime),
-		cond:        *sync.NewCond(&sync.Mutex{}),
-		Upgrader:    websocket.Upgrader{},
+		directories:  directories,
+		Endpoint:     "/reload_ws",
+		Log:          log.New(os.Stdout, "Reload: ", log.Lmsgprefix|log.Ltime),
+		Upgrader:     websocket.Upgrader{},
+		AllowCaching: false,
+
+		startedWatcher: false,
+		cond:           sync.NewCond(&sync.Mutex{}),
 	}
 }
 
@@ -95,10 +106,9 @@ func (reload *Reloader) Handle(next http.Handler) http.Handler {
 			return
 		}
 		// set headers first so that they're sent with the initial response
-
-		// disable caching, because http.FileServer will
-		// send Last-Modified headers, prompting the browser to cache it
-		w.Header().Set("Cache-Control", "no-cache")
+		if reload.AllowCaching {
+			w.Header().Set("Cache-Control", "no-cache")
+		}
 
 		body := &bytes.Buffer{}
 		wrap := newWrapResponseWriter(w, r.ProtoMajor)
