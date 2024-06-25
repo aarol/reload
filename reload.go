@@ -137,7 +137,11 @@ func (reload *Reloader) Handle(next http.Handler) http.Handler {
 func (reload *Reloader) ServeWS(w http.ResponseWriter, r *http.Request) {
 	version := r.URL.Query().Get("v")
 	if version != wsCurrentVersion {
-		reload.Log.Printf("Injected script version is out of date (v%s < v%s)\n", version, wsCurrentVersion)
+		reload.Log.Printf(
+			"Injected script version is out of date (v%s < v%s)\n",
+			version,
+			wsCurrentVersion,
+		)
 	}
 
 	conn, err := reload.Upgrader.Upgrade(w, r, nil)
@@ -167,7 +171,8 @@ func InjectedScript(endpoint string) string {
 	  setTimeout(() => listen(true), 1000)
 	}
 	function listen(isRetry) {
-	  let ws = new WebSocket("ws://" + location.host + "%s?v=%s")
+    let protocol = location.protocol === "https:" ? "wss://" : "ws://"
+	  let ws = new WebSocket(protocol + location.host + "%s?v=%s")
 	  if(isRetry) {
 	    ws.onopen = () => window.location.reload()
 	  }
