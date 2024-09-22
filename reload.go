@@ -171,7 +171,7 @@ func InjectedScript(endpoint string) string {
 	  setTimeout(() => listen(true), 1000)
 	}
 	function listen(isRetry) {
-    let protocol = location.protocol === "https:" ? "wss://" : "ws://"
+      let protocol = location.protocol === "https:" ? "wss://" : "ws://"
 	  let ws = new WebSocket(protocol + location.host + "%s?v=%s")
 	  if(isRetry) {
 	    ws.onopen = () => window.location.reload()
