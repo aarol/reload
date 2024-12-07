@@ -7,6 +7,9 @@ import (
 	"net/http"
 )
 
+// The following was copied and modified from Chi's WrapWriter middleware (https://github.com/go-chi/chi/blob/6ceb498b221efa11f559602beb2463b8b52c2161/middleware/wrap_writer.go)
+// The original work was derived from Goji's middleware (https://github.com/zenazn/goji/tree/master/web/middleware)
+
 func newWrapResponseWriter(w http.ResponseWriter, protoMajor int) wrapResponseWriter {
 	_, fl := w.(http.Flusher)
 
