@@ -1,20 +1,23 @@
 <!DOCTYPE html>
 <html lang="en">
+  <head>
+    <title>Document</title>
+    <link rel="stylesheet" href="static/index.css" />
+  </head>
+  <body>
+    {{/* Try running the server and editing this file */}}
 
-<head>
-  <title>Document</title>
-  <link rel="stylesheet" href="static/index.css">
-</head>
-
-<body>
-  {{/* Try running the server and editing this file */}}
-
-  <h1>Hello World</h1>
-  <p>This is the sample page for the Go package "reload" hosted at
-    <a href="https://github.com/aarol/reload">https://github.com/aarol/reload</a>
-  </p>
-  <p>Try running the example and making edits to the html/css files located in the "example/ui" folder.</p>
-  <p>This page was rendered at {{ .Timestamp }}</p>
-</body>
-
+    <h1>Hello World</h1>
+    <p>
+      This is the sample page for the Go package "reload" hosted at
+      <a href="https://github.com/aarol/reload"
+        >https://github.com/aarol/reload</a
+      >
+    </p>
+    <p>
+      Try running the example and making edits to the html/css files located in
+      the "example/ui" folder.
+    </p>
+    <p>This page was rendered at {{ .Timestamp }}</p>
+  </body>
 </html>
