@@ -40,7 +40,14 @@ func (reload *Reloader) WatchDirectories() {
 			return
 		}
 		for _, dir := range directories {
-			w.Add(dir)
+			// Path is converted to absolute path, so that fsnotify.Event also contains
+			// absolute paths
+			absPath, err := filepath.Abs(dir)
+			if err != nil {
+				reload.logError("Failed to convert path to absolute path: %s\n", err)
+				continue
+			}
+			w.Add(absPath)
 		}
 	}
 
@@ -65,9 +72,11 @@ func (reload *Reloader) WatchDirectories() {
 		case e := <-w.Events:
 			switch {
 			case e.Has(fsnotify.Create):
-				// Watch any created file/directory
-				if err := w.Add(e.Name); err != nil {
-					log.Printf("error watching %s: %s\n", e.Name, err)
+				dir := filepath.Dir(e.Name)
+				// Watch any created directory
+				if err := w.Add(dir); err != nil {
+					reload.logError("error watching %s: %s\n", e.Name, err)
+					continue
 				}
 				debounce(callback(path.Base(e.Name)))
 
