@@ -1,7 +1,5 @@
 # Reload
 
-![Tests](https://github.com/aarol/reload/actions/workflows/test.yml/badge.svg)
-
 Reload is a Go package, which enables "soft reloading" of web server assets and templates, reloading the browser instantly via Websockets. The strength of Reload lies in it's simple API and easy integration to any Go projects.
 
 ## Installation
@@ -37,6 +35,16 @@ Reload is a Go package, which enables "soft reloading" of web server assets and 
 2. Run your application, make changes to files in the specified directories, and see the updated page instantly!
 
 See the full example at <https://github.com/aarol/reload/blob/main/example/main.go>
+
+> [!NOTE]  
+> The browser often caches resources served by http.FileServer (because of Last-Modified headers generated from filesystem timestamps),
+> which leads to unexpected caching issues when using this middleware. To prevent this, the middleware sends a "Cache-Control: no-cache" header. This is enabled by default, but can be disabled by setting the `DisableCaching` field to `false`.
+
+### Logging
+
+By default, reload logs errors on `stderr`, with `(*Reloader).ErrorLog`. Error logging can be disabled by setting `ErrorLog` to `nil`.
+
+There is also a logger which reports debug information, exposed as `(*Reloader).DebugLog` (`nil` by default)
 
 ## How it works
 
