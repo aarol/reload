@@ -3,7 +3,6 @@ package reload
 import (
 	"errors"
 	"io/fs"
-	"log"
 	"path"
 	"path/filepath"
 	"strings"
@@ -17,13 +16,13 @@ import (
 // broadcasts on write.
 func (reload *Reloader) WatchDirectories() {
 	if len(reload.directories) == 0 {
-		reload.Log.Println("no directories provided (reload.Directories is empty)")
+		reload.logError("no directories provided (reload.Directories is empty)\n")
 		return
 	}
 
 	w, err := fsnotify.NewWatcher()
 	if err != nil {
-		reload.Log.Printf("error initializing fsnotify watcher: %s\n", err)
+		reload.logError("error initializing fsnotify watcher: %s\n", err)
 	}
 
 	defer w.Close()
@@ -33,9 +32,9 @@ func (reload *Reloader) WatchDirectories() {
 		if err != nil {
 			var pathErr *fs.PathError
 			if errors.As(err, &pathErr) {
-				reload.Log.Printf("directory doesn't exist: %s\n", pathErr.Path)
+				reload.logError("directory doesn't exist: %s\n", pathErr.Path)
 			} else {
-				reload.Log.Printf("error walking directories: %s\n", err)
+				reload.logError("error walking directories: %s\n", err)
 			}
 			return
 		}
@@ -51,13 +50,13 @@ func (reload *Reloader) WatchDirectories() {
 		}
 	}
 
-	reload.Log.Println("watching", strings.Join(reload.directories, ","), "for changes")
+	reload.logDebug("watching %s for changes\n", strings.Join(reload.directories, ","))
 
 	debounce := debounce.New(100 * time.Millisecond)
 
 	callback := func(path string) func() {
 		return func() {
-			reload.Log.Println("Edit", path)
+			reload.logDebug("Edit %s\n", path)
 			if reload.OnReload != nil {
 				reload.OnReload()
 			}
@@ -68,7 +67,7 @@ func (reload *Reloader) WatchDirectories() {
 	for {
 		select {
 		case err := <-w.Errors:
-			reload.Log.Println("error watching: ", err)
+			reload.logError("error watching: %s \n", err)
 		case e := <-w.Events:
 			switch {
 			case e.Has(fsnotify.Create):

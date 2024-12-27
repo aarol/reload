@@ -3,7 +3,9 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"text/template"
 	"time"
 
@@ -41,6 +43,8 @@ func main() {
 		reload.OnReload = func() {
 			templateCache = parseTemplates()
 		}
+
+		reload.DebugLog = log.New(os.Stderr, "reload: ", log.Lmsgprefix|log.Ltime)
 
 		handler = reload.Handle(handler)
 	} else {

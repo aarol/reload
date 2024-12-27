@@ -66,7 +66,13 @@ type Reloader struct {
 	// It is also possible to enable this option, and use a middleware like Chi's NoCache (https://github.com/go-chi/chi/blob/master/middleware/nocache.go)
 	AllowCaching bool
 
+	// Deprecated: Use ErrorLog instead.
 	Log *log.Logger
+
+	// Enable this logger to print debug information (when the reloads happen, etc)
+	DebugLog *log.Logger
+
+	ErrorLog *log.Logger
 
 	// Used to upgrade connections to Websocket connections
 	Upgrader websocket.Upgrader
@@ -81,8 +87,8 @@ func New(directories ...string) *Reloader {
 	return &Reloader{
 		directories:  directories,
 		Endpoint:     "/reload_ws",
-		Log:          log.New(os.Stdout, "Reload: ", log.Lmsgprefix|log.Ltime),
-		Upgrader:     websocket.Upgrader{},
+		ErrorLog:       log.New(os.Stdout, "Reload: ", log.Lmsgprefix|log.Ltime),
+		Upgrader:       websocket.Upgrader{},
 		AllowCaching: false,
 
 		startedWatcher: false,
@@ -137,7 +143,7 @@ func (reload *Reloader) Handle(next http.Handler) http.Handler {
 func (reload *Reloader) ServeWS(w http.ResponseWriter, r *http.Request) {
 	version := r.URL.Query().Get("v")
 	if version != wsCurrentVersion {
-		reload.Log.Printf(
+		reload.logError(
 			"Injected script version is out of date (v%s < v%s)\n",
 			version,
 			wsCurrentVersion,
@@ -146,7 +152,7 @@ func (reload *Reloader) ServeWS(w http.ResponseWriter, r *http.Request) {
 
 	conn, err := reload.Upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		reload.Log.Printf("ServeWS error: %s\n", err)
+		reload.logError("ServeWS error: %s\n", err)
 		return
 	}
 
@@ -185,4 +191,16 @@ func InjectedScript(endpoint string) string {
 	}
 	listen(false)
 </script>`, endpoint, wsCurrentVersion)
+}
+
+func (r *Reloader) logDebug(format string, v ...any) {
+	if r.DebugLog != nil {
+		r.DebugLog.Printf(format, v...)
+	}
+}
+
+func (r *Reloader) logError(format string, v ...any) {
+	if r.ErrorLog != nil {
+		r.ErrorLog.Printf(format, v...)
+	}
 }
