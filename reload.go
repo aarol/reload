@@ -58,13 +58,13 @@ type Reloader struct {
 	// Endpoint defines what path the WebSocket connection is formed over.
 	// It is set to "/reload_ws" by default.
 	Endpoint string
-	// When set to true, prevents the middleware from sending a "Cache-Control=no-cache" header on each request.
-	//
-	// Some handlers, like http.FileServer send Last-Modified headers, which prevent the browser from refetching changed files correctly.
-	//
-	// To prevent confusion, caching is disabled by default.
-	// It is also possible to enable this option, and use a middleware like Chi's NoCache (https://github.com/go-chi/chi/blob/master/middleware/nocache.go)
+	// Deprecated: see DisableCaching instead.
 	AllowCaching bool
+	// DisableCaching is set to true by default. Writes a "Cache-Control=no-cache" header on each response.
+	//
+	// Some http.Handlers, like http.FileServer, automatically write a Last-Modified header.
+	// Browser will usually cache the resource if no changes occur after multiple requests.
+	DisableCaching bool
 
 	// Deprecated: Use ErrorLog instead.
 	Log *log.Logger
@@ -85,11 +85,11 @@ type Reloader struct {
 // New returns a new Reloader with the provided directories.
 func New(directories ...string) *Reloader {
 	return &Reloader{
-		directories:  directories,
-		Endpoint:     "/reload_ws",
+		directories:    directories,
+		Endpoint:       "/reload_ws",
 		ErrorLog:       log.New(os.Stdout, "Reload: ", log.Lmsgprefix|log.Ltime),
 		Upgrader:       websocket.Upgrader{},
-		AllowCaching: false,
+		DisableCaching: true,
 
 		startedWatcher: false,
 		cond:           sync.NewCond(&sync.Mutex{}),
@@ -112,7 +112,7 @@ func (reload *Reloader) Handle(next http.Handler) http.Handler {
 			return
 		}
 		// set headers first so that they're sent with the initial response
-		if reload.AllowCaching {
+		if reload.DisableCaching {
 			w.Header().Set("Cache-Control", "no-cache")
 		}
 
