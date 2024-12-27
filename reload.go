@@ -87,7 +87,7 @@ func New(directories ...string) *Reloader {
 	return &Reloader{
 		directories:    directories,
 		Endpoint:       "/reload_ws",
-		ErrorLog:       log.New(os.Stdout, "Reload: ", log.Lmsgprefix|log.Ltime),
+		ErrorLog:       log.New(os.Stderr, "Reload: ", log.Lmsgprefix|log.Ltime),
 		Upgrader:       websocket.Upgrader{},
 		DisableCaching: true,
 
