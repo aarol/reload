@@ -62,9 +62,9 @@ You can also do the injection yourself, as the package also exposes the methods 
 - Reload works with everything that the server sends to the client (HTML,CSS,JS etc.), but it cannot restart the server itself,
   since it's just a middleware running on the server.
 
-  To reload the entire server, you can use another file watcher on top, like [watchexec](https://github.com/watchexec/watchexec):
+  To reload the entire server, you can use another file watcher on top, like [gow](https://github.com/mitranim/gow):
 
-  `watchexec -r --exts .go -- go run .`
+  `gow run .`
 
   When the websocket connection to the server is lost, the browser will try to reconnect every second.
   This means that when the server comes back, the browser will still reload, although not as fast :)
