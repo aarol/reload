@@ -117,7 +117,7 @@ func (reload *Reloader) Handle(next http.Handler) http.Handler {
 		}
 
 		body := &bytes.Buffer{}
-		wrap := newWrapResponseWriter(w, r.ProtoMajor)
+		wrap := newWrapResponseWriter(w, r.ProtoMajor, len(scriptToInject))
 		// copy body so that we can sniff the content type
 		wrap.Tee(body)
 

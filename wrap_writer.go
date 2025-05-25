@@ -5,15 +5,17 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strconv"
+	"strings"
 )
 
 // The following was copied and modified from Chi's WrapWriter middleware (https://github.com/go-chi/chi/blob/6ceb498b221efa11f559602beb2463b8b52c2161/middleware/wrap_writer.go)
 // The original work was derived from Goji's middleware (https://github.com/zenazn/goji/tree/master/web/middleware)
 
-func newWrapResponseWriter(w http.ResponseWriter, protoMajor int) wrapResponseWriter {
+func newWrapResponseWriter(w http.ResponseWriter, protoMajor int, scriptSize int) wrapResponseWriter {
 	_, fl := w.(http.Flusher)
 
-	bw := basicWriter{ResponseWriter: w}
+	bw := basicWriter{ResponseWriter: w, scriptSize: scriptSize}
 
 	if protoMajor == 2 {
 		_, ps := w.(http.Pusher)
@@ -63,6 +65,7 @@ type wrapResponseWriter interface {
 // http.ResponseWriter interface.
 type basicWriter struct {
 	http.ResponseWriter
+	scriptSize  int
 	wroteHeader bool
 	code        int
 	bytes       int
@@ -70,6 +73,24 @@ type basicWriter struct {
 }
 
 func (b *basicWriter) WriteHeader(code int) {
+
+	headers := b.Header()
+
+	// If the Content-Length is set, and the Content-Type is HTML, then injecting
+	// the script at the end will not work (typically this is done by http.FileServer)
+	//
+	// Handle this by changing Content-Size before sending the headers to include space for the script
+	if contentLength := headers.Get("Content-Length"); contentLength != "" {
+		if strings.HasPrefix(headers.Get("Content-Type"), "text/html") {
+			cl, err := strconv.Atoi(contentLength)
+			// ignore if failed to parse
+			if err == nil {
+				newLength := strconv.Itoa(cl + b.scriptSize)
+				headers.Set("Content-Length", newLength)
+			}
+		}
+	}
+
 	if !b.wroteHeader {
 		b.code = code
 		b.wroteHeader = true
