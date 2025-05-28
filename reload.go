@@ -96,6 +96,48 @@ func New(directories ...string) *Reloader {
 	}
 }
 
+func expectingDocument(h http.Header) bool {
+	// If set, we can guarantee that it is either html or not
+	if dest := h.Get("Sec-Fetch-Dest"); dest != "" {
+		return strings.EqualFold(dest, "document")
+	}
+
+	// WebSocket isn't html for sure
+	if strings.EqualFold(h.Get("Upgrade"), "websocket") {
+		return false
+	}
+
+	// SSE request will contain only value in Accept
+	if strings.EqualFold(h.Get("Accept"), "text/event-stream") {
+		return false
+	}
+
+	accept := h.Values("Accept")
+	if len(accept) == 0 {
+		// Could be anything
+		return true
+	}
+
+	for i, val := range accept {
+		// TODO: use 1.24'th SplitSeq instead
+		for j, expecting := range strings.Split(val, ",") {
+			cts := strings.Split(expecting, ";")
+			ct := strings.TrimSpace(strings.ToLower(cts[0]))
+
+			switch ct {
+			case "*/*":
+				if i == 0 && j == 0 {
+					return true // Only triggers when first item
+				}
+			case "text/html", "application/xhtml+xml", "application/xml":
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
 // Handle starts the reload middleware, watching the specified directories and injecting the script into HTML responses.
 func (reload *Reloader) Handle(next http.Handler) http.Handler {
 	// Only init the watcher once
@@ -112,11 +154,14 @@ func (reload *Reloader) Handle(next http.Handler) http.Handler {
 			return
 		}
 
-		// Forward Server-Sent Events (SSE) without unnecessary copying
-		if strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
+		// Avoid wrapping when there's no document expected.
+		if !expectingDocument(r.Header) {
+			reload.logDebug("assume no html (Sec-Fetch-Dest: %q; Accept: %q): %q", r.Header.Get("Sec-Fetch-Dest"), r.Header.Get("Accept"), r.URL.Path)
 			next.ServeHTTP(w, r)
 			return
 		}
+
+		reload.logDebug("likely received request for HTML page: %q", r.URL.Path)
 
 		// set headers first so that they're sent with the initial response
 		if reload.DisableCaching {
