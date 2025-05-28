@@ -1,6 +1,6 @@
 module example
 
-go 1.19
+go 1.23
 
 require github.com/aarol/reload v1.1.3
 
