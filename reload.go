@@ -111,6 +111,13 @@ func (reload *Reloader) Handle(next http.Handler) http.Handler {
 			reload.ServeWS(w, r)
 			return
 		}
+
+		// Forward Server-Sent Events (SSE) without unnecessary copying
+		if strings.Contains(w.Header().Get("Accept"), "text/event-stream") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		// set headers first so that they're sent with the initial response
 		if reload.DisableCaching {
 			w.Header().Set("Cache-Control", "no-cache")
