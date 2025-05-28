@@ -113,7 +113,7 @@ func (reload *Reloader) Handle(next http.Handler) http.Handler {
 		}
 
 		// Forward Server-Sent Events (SSE) without unnecessary copying
-		if strings.Contains(w.Header().Get("Accept"), "text/event-stream") {
+		if strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
 			next.ServeHTTP(w, r)
 			return
 		}
