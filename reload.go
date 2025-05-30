@@ -36,7 +36,6 @@
 package reload
 
 import (
-	"bytes"
 	"fmt"
 	"log"
 	"net/http"
@@ -128,16 +127,17 @@ func (reload *Reloader) Handle(next http.Handler) http.Handler {
 			w.Header().Set("Cache-Control", "no-cache")
 		}
 
-		body := &bytes.Buffer{}
 		wrap := newWrapResponseWriter(w, r.ProtoMajor, len(scriptToInject))
-		// copy body so that we can sniff the content type
-		wrap.Tee(body)
+
+		// teeBody is a fixed-size buffer that will be used to sniff the content type
+		var teeBody = &fixedBuffer{buf: make([]byte, 512)} // http.DetectContentType reads at most 512 bytes
+		wrap.Tee(teeBody)
 
 		next.ServeHTTP(wrap, r)
-		contentType := w.Header().Get("Content-Type")
+		contentType := wrap.Header().Get("Content-Type")
 
 		if contentType == "" {
-			contentType = http.DetectContentType(body.Bytes())
+			contentType = http.DetectContentType(teeBody.buf)
 		}
 
 		if strings.HasPrefix(contentType, "text/html") {
@@ -215,4 +215,21 @@ func (r *Reloader) logError(format string, v ...any) {
 	if r.ErrorLog != nil {
 		r.ErrorLog.Printf(format, v...)
 	}
+}
+
+// fixedBuffer implements io.Writer and writes to a fixed-size []byte slice.
+type fixedBuffer struct {
+	buf []byte
+	pos int
+}
+
+func (w *fixedBuffer) Write(p []byte) (n int, err error) {
+	if w.pos >= len(w.buf) {
+		return 0, nil
+	}
+
+	n = copy(w.buf[w.pos:], p)
+	w.pos += n
+
+	return n, nil
 }
