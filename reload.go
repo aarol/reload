@@ -111,6 +111,11 @@ func (reload *Reloader) Handle(next http.Handler) http.Handler {
 			reload.ServeWS(w, r)
 			return
 		}
+		if dest := r.Header.Get("Sec-Fetch-Dest"); dest != "" && dest != "document" {
+			// Only requests with Sec-Fetch-Dest == "document" will have HTML document responses.
+			next.ServeHTTP(w, r)
+			return
+		}
 
 		// Forward Server-Sent Events (SSE) without unnecessary copying
 		if strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
