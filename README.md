@@ -50,12 +50,14 @@ There is also a logger which reports debug information, exposed as `(*Reloader).
 
 When added to the top of the middleware chain, `(*Reloader).Handle()` will inject a small `<script/>` at the end of any HTML file sent by your application. This script will instruct the browser to open a WebSocket connection back to your server, which will be also handled by the middleware.
 
-The injected script is at the bottom of [this file](https://github.com/aarol/reload/blob/main/reload.go).
+The injected script is in [reload.go](./reload.go#L179).
 
 You can also do the injection yourself, as the package also exposes the methods `(*Reloader).ServeWS` and `(*Reloader).WatchDirectories`, which are used by the `(*Reloader).Handle` middleware.
 
 > Currently, injecting the script is done by appending to the end of the document, even after the \</html\> tag.
 > This makes the library code _much_ simpler, but may break older/less forgiving browsers.
+>
+> All modern browser accept this and will accept for the forseeable future to avoid breaking the web.
 
 ## Caveats
 
