@@ -176,7 +176,7 @@ func (reload *Reloader) Wait() {
 	reload.cond.L.Unlock()
 }
 
-// Returns the javascript that will be injected on each HTML page.
+// InjectedScript returns the javascript that will be injected on each HTML page.
 func InjectedScript(endpoint string) string {
 	return fmt.Sprintf(`
 <script>
