@@ -1,6 +1,8 @@
 # Reload
 
-Reload is a Go package, which enables "soft reloading" of web server assets and templates, reloading the browser instantly via Websockets. The strength of Reload lies in it's simple API and easy integration to any Go projects.
+Reload is a Go package, which enables "soft reloading" of web server assets and templates, reloading the browser instantly via Websockets. The strength of Reload lies in its simple API and easy integration to any Go projects.
+
+![Reload demo](https://github.com/user-attachments/assets/8697eb35-50a2-4261-a75a-0be0df3906a7)
 
 ## Installation
 
